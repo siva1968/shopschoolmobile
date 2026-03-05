@@ -11,7 +11,6 @@ import {
 } from "react-native";
 import {
     Appbar,
-    Badge,
     Chip,
     Searchbar,
     Surface,
@@ -21,7 +20,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Loader } from "../../../components/common/Loader";
 import { COLORS, FONT_SIZE, RADIUS, SPACING } from "../../../constants/theme";
 import { useAuth } from "../../../contexts/AuthContext";
-import { useCart } from "../../../contexts/CartContext";
 import { usePortal } from "../../../contexts/PortalContext";
 import { useShop } from "../../../contexts/ShopContext";
 import { formatPrice } from "../../../lib/auth-utils";
@@ -42,57 +40,21 @@ interface KitListResponse {
 }
 
 function ShopHeader() {
-  const { user, logout } = useAuth();
-  const { cartItemCount } = useCart();
   const { portal } = usePortal();
 
   return (
     <Appbar.Header style={styles.appBar} elevated>
-      {portal?.logo ? (
+      {portal?.logo && (
         <Image
           source={{ uri: `data:image/jpeg;base64,${portal.logo}` }}
           style={styles.headerLogo}
           resizeMode="contain"
         />
-      ) : (
-        <Appbar.Content
-          title={portal?.school_name || "ShopSchool"}
-          titleStyle={styles.headerTitle}
-        />
       )}
-      {portal?.logo && (
-        <Appbar.Content
-          title={portal?.school_name || "ShopSchool"}
-          titleStyle={styles.headerTitle}
-        />
-      )}
-      <View style={styles.headerRight}>
-        <TouchableOpacity
-          style={styles.cartBtn}
-          onPress={() => router.push("/(tabs)/cart")}
-        >
-          <MaterialCommunityIcons
-            name="cart-outline"
-            size={26}
-            color={COLORS.textPrimary}
-          />
-          {cartItemCount > 0 && (
-            <Badge size={16} style={styles.cartBadge}>
-              {cartItemCount > 9 ? "9+" : cartItemCount}
-            </Badge>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => router.push("/(tabs)/account")}
-          style={styles.avatarBtn}
-        >
-          <MaterialCommunityIcons
-            name="account-circle"
-            size={30}
-            color={COLORS.primary}
-          />
-        </TouchableOpacity>
-      </View>
+      <Appbar.Content
+        title="Shopschool"
+        titleStyle={styles.headerTitle}
+      />
     </Appbar.Header>
   );
 }
@@ -380,32 +342,20 @@ const styles = StyleSheet.create({
   },
   appBar: {
     backgroundColor: COLORS.surface,
+    height: 28,
+    minHeight: 28,
   },
   headerTitle: {
-    fontSize: FONT_SIZE.lg,
+    fontSize: FONT_SIZE.xs,
     fontWeight: "700",
     color: COLORS.primaryDark,
   },
   headerLogo: {
-    width: 40,
-    height: 40,
+    width: 20,
+    height: 20,
     marginLeft: SPACING.sm,
     borderRadius: RADIUS.sm,
   },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: SPACING.sm,
-    gap: SPACING.xs,
-  },
-  cartBtn: { position: "relative", padding: 6 },
-  cartBadge: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    backgroundColor: COLORS.secondary,
-  },
-  avatarBtn: { padding: 4 },
   studentBanner: {
     backgroundColor: "#e6f4fc",
     paddingHorizontal: SPACING.md,

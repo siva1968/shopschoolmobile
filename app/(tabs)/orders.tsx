@@ -33,7 +33,10 @@ import { endpoints } from "../../shared/endpoints";
 import { Order } from "../../shared/types";
 
 interface OrdersResponse {
-  orders: Order[];
+  list: Order[];
+  count: number;
+  skip: number;
+  take: number;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -71,10 +74,13 @@ function OrderCard({ order }: { order: Order }) {
     ? format(new Date(order.created_at), "dd MMM yyyy")
     : "";
 
-  const allItems = [
-    ...(order.custom_items || []),
-    ...(order.items || []),
-  ];
+  // custom_items is the canonical display source:
+  //   - kit orders: contains the single KitCustomItem aggregate
+  //   - uniform/book orders: same line items as `items` (with returned_quantity added)
+  // Using custom_items first avoids duplicating items when both arrays are populated.
+  const allItems = order.custom_items?.length
+    ? order.custom_items
+    : (order.items || []);
 
   const handleDownloadInvoice = useCallback(async () => {
     if (!order.order_attributes?.invoice_id) {
@@ -239,7 +245,7 @@ export default function OrdersScreen() {
       staleTime: 30_000,
     });
 
-  const orders = data?.orders || [];
+  const orders = data?.list || [];
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>

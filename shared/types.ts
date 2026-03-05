@@ -244,30 +244,94 @@ export interface CartData {
 
 // ─── Order ───────────────────────────────────────────────────────────────────
 export interface OrderAttributes {
+  id?: string;
+  order_id?: string;
   invoice_id?: string;
   books_status?: string;
   uniform_status?: string;
+  display_id?: number;
+  portal_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  deleted_at?: string | null;
 }
+
+/** Shape of a kit custom item (order 1 / books kit) */
+export interface KitCustomItem {
+  id: string;
+  order_id?: string;
+  item_type: "kit";
+  order_line_item_ids?: string[];
+  product_title?: string;
+  class_kit_type?: "bundle" | "free";
+  unit_price?: number;
+  quantity?: number;
+}
+
+/** Standard line item as it appears in order.items / order.custom_items */
+export type OrderLineItem = CartLineItem & {
+  returned_quantity?: number;
+  detail?: {
+    id?: string;
+    version?: number;
+    order_id?: string;
+    quantity?: number;
+    fulfilled_quantity?: number;
+    delivered_quantity?: number;
+    shipped_quantity?: number;
+    return_requested_quantity?: number;
+    return_received_quantity?: number;
+    return_dismissed_quantity?: number;
+    written_off_quantity?: number;
+    unit_price?: number | null;
+    created_at?: string;
+    updated_at?: string;
+    deleted_at?: string | null;
+    [key: string]: unknown;
+  };
+};
 
 export interface Order {
   id: string;
   display_id?: number;
   status?: string;
   currency_code?: string;
+  region_id?: string;
+  customer_id?: string;
+  version?: number;
+  sales_channel_id?: string;
+  email?: string;
+  no_notification?: boolean;
+  is_draft_order?: boolean;
   created_at?: string;
-  cancelled_at?: string;
-  items?: CartLineItem[];
-  custom_items?: CartLineItem[];
+  updated_at?: string;
+  deleted_at?: string | null;
+  cancelled_at?: string | null;
+  canceled_at?: string | null;
+  shipping_address?: { id: string };
+  billing_address?: { id: string };
+  shipping_address_id?: string;
+  billing_address_id?: string;
+  items?: OrderLineItem[];
+  custom_items?: (OrderLineItem | KitCustomItem)[];
   order_attributes?: OrderAttributes;
   is_cancelled?: boolean;
   has_returns?: boolean;
-  refund_info?: string;
+  refund_info?: string | null;
   return_items_map?: Record<string, unknown>;
   cart?: {
     id: string;
     order?: { total: number; id: string };
   };
-  metadata?: { total?: number };
+  metadata?: {
+    total?: number;
+    portal_id?: string;
+    cgst_amount?: number;
+    igst_amount?: number;
+    sgst_amount?: number;
+    kit?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
 }
 
 // ─── Payment ─────────────────────────────────────────────────────────────────
