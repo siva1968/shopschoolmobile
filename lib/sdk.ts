@@ -1,15 +1,67 @@
-import Medusa from "@medusajs/js-sdk";
+import axios, {
+    AxiosInstance,
+    AxiosRequestConfig,
+    InternalAxiosRequestConfig,
+} from "axios";
+import { storage } from "./storage";
 
+const BASE_URL =
+  process.env.EXPO_PUBLIC_MEDUSA_BACKEND_URL ?? "https://api.shopschool.in";
 
-const backendUrl = "http://192.168.68.63:9000";
-const publishableKey = "pk_691e97d445f4f8ee73b810dfe3a19438941890e3ddad2f495c919e600f5278d8";
+const PUBLISHABLE_KEY =
+  process.env.EXPO_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? "";
 
-export const sdk = new Medusa({
-  baseUrl: backendUrl,
-  debug: __DEV__,
-  // if possible, insert portal based publishable key
-  publishableKey: publishableKey,
-  auth: {
-    type: "jwt",
+// ─── Create axios instance ─────────────────────────────────────────────────────
+export const api: AxiosInstance = axios.create({
+  baseURL: BASE_URL,
+  headers: {
+    "Content-Type": "application/json",
+    "x-publishable-api-key": PUBLISHABLE_KEY,
   },
 });
+
+// ─── Request interceptor — attach JWT ─────────────────────────────────────────
+api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  const token = await storage.getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// ─── Convenience wrappers ─────────────────────────────────────────────────────
+export const apiGet = <T = unknown>(
+  url: string,
+  config?: AxiosRequestConfig
+) => api.get<T>(url, config).then((r) => r.data);
+
+export const apiPost = <T = unknown>(
+  url: string,
+  data?: unknown,
+  config?: AxiosRequestConfig
+) => api.post<T>(url, data, config).then((r) => r.data);
+
+export const apiPatch = <T = unknown>(
+  url: string,
+  data?: unknown,
+  config?: AxiosRequestConfig
+) => api.patch<T>(url, data, config).then((r) => r.data);
+
+export const apiDelete = <T = unknown>(
+  url: string,
+  config?: AxiosRequestConfig
+) => api.delete<T>(url, config).then((r) => r.data);
+
+// ─── Auth calls ────────────────────────────────────────────────────────────────
+export const authApi = {
+  login: (body: {
+    student_enrollment_code: string;
+    password: string;
+    portal_id: string;
+  }) =>
+    api
+      .post<{ token: string }>("/auth/customer/app-auth", body)
+      .then((r) => r.data),
+
+  logout: () => api.delete("/auth/session").catch(() => null),
+};

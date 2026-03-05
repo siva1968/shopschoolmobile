@@ -1,49 +1,59 @@
 /**
- * Decode JWT token without verification (for client-side use only)
- * This is safe for reading non-sensitive claims like user ID, expiration, etc.
+ * Decode a JWT token without verification (client-side only).
+ * Returns the payload or null if invalid.
  */
-export function decode(token: string): Record<string, unknown> | null {
+export function decodeToken(token: string): Record<string, unknown> | null {
   try {
-    // Remove quotes if token is stringified
-    const cleanToken = token.replace(/"/g, '');
-    
-    // JWT has 3 parts separated by dots
-    const parts = cleanToken.split('.');
-    if (parts.length !== 3) {
-      return null;
-    }
-
-    // Decode the payload (second part)
-    const payload = parts[1];
-    
-    // Add padding if needed for base64 decoding
-    const paddedPayload = payload + '='.repeat((4 - payload.length % 4) % 4);
-    
-    // Decode from base64
-    const decodedPayload = atob(paddedPayload);
-    
-    // Parse JSON
-    return JSON.parse(decodedPayload);
-  } catch (error) {
-    console.error('Error decoding token:', error);
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    // Base64url → base64 → decode using atob (available in RN Hermes)
+    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
+    const decoded = JSON.parse(
+      decodeURIComponent(
+        Array.from(atob(padded))
+          .map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"))
+          .join("")
+      )
+    );
+    return decoded;
+  } catch {
     return null;
   }
 }
 
 /**
- * Check if a token is expired
+ * Check if a decoded JWT payload is still valid (not expired).
  */
-export function isTokenExpired(token: string): boolean {
-  try {
-    const decoded = decode(token);
-    if (!decoded || !decoded.exp) {
-      return true;
-    }
-    
-    // exp is in seconds, Date.now() is in milliseconds
-    const exp = typeof decoded.exp === 'number' ? decoded.exp : parseInt(String(decoded.exp), 10);
-    return exp * 1000 < Date.now();
-  } catch {
-    return true;
-  }
+export function isTokenValid(decoded: Record<string, unknown>): boolean {
+  const exp = decoded["exp"];
+  if (typeof exp !== "number") return false;
+  return exp * 1000 > Date.now();
+}
+
+/**
+ * Strip the `+suffix` added server-side to emails.
+ * e.g. "parent+13E010@gmail.com" → "parent@gmail.com"
+ */
+export function reconstructEmail(email?: string): string {
+  if (!email) return "";
+  const atIndex = email.lastIndexOf("@");
+  if (atIndex === -1) return email;
+  const localPart = email.slice(0, atIndex);
+  const domain = email.slice(atIndex + 1);
+  const plusIndex = localPart.lastIndexOf("+");
+  if (plusIndex === -1) return email;
+  return `${localPart.slice(0, plusIndex)}@${domain}`;
+}
+
+/**
+ * Format currency amount (paise → rupees).
+ */
+export function formatPrice(amount: number, currency = "INR"): string {
+  const rupees = amount / 100;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 0,
+  }).format(rupees);
 }

@@ -1,386 +1,459 @@
-import { FieldType, Loader, TextField } from '@/components';
-import { useAuth, usePortal, useSnackbar } from '@/contexts';
-import { sdk } from '@/lib';
-import { colors, spacing } from '@/theme/theme';
-import { router } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
-import { FormProvider, useForm } from 'react-hook-form';
+import { router } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 import {
-  Image,
-  KeyboardAvoidingView,
-  Linking,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  View
-} from 'react-native';
+    FlatList,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    View,
+} from "react-native";
 import {
-  ActivityIndicator,
-  Button,
-  Surface,
-  Text
-} from 'react-native-paper';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+    Button,
+    Divider,
+    HelperText,
+    Icon,
+    Portal as PaperPortal,
+    Surface,
+    Text,
+    TextInput,
+} from "react-native-paper";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Loader } from "../components/common/Loader";
+import { COLORS, FONT_SIZE, RADIUS, SPACING } from "../constants/theme";
+import { useAuth } from "../contexts/AuthContext";
+import { usePortal } from "../contexts/PortalContext";
+import type { Portal } from "../shared/types";
 
-interface LoginFormData {
-  student_enrollment_code: string;
+interface LoginForm {
+  enrollmentCode: string;
   password: string;
 }
 
-interface StudentStatusResponse {
-  is_active: boolean;
-}
+export default function LoginScreen() {
+  const { isAuthenticated, isLoading: authLoading, login } = useAuth();
+  const { portal, portals, isLoading: portalsLoading, selectPortal } = usePortal();
 
-export default function LoginPage() {
-  const formMethods = useForm<LoginFormData>({
-    defaultValues: {
-      student_enrollment_code: '',
-      password: ''
-    }
+  const [dropdownVisible, setDropdownVisible] = useState(false);
+  const [schoolError, setSchoolError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginForm>({
+    defaultValues: { enrollmentCode: "", password: "" },
   });
 
-  const { login, isLoading: authLoading, isAuthenticated } = useAuth();
-  const { portal, isLoading: portalLoading, error: portalError } = usePortal();
-  const { showMessage } = useSnackbar();
-  // const params = useLocalSearchParams();
-  const insets = useSafeAreaInsets();
-
-  const [isClient, setIsClient] = useState(false);
-  const [isCheckingStudent, setIsCheckingStudent] = useState(false);
-
-  // const portalParamFromUrl = params.portal as string;
-  const portalParamFromUrl = "epistemo";
-
-  // Ensure client-side initialization
   useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  // Redirect if already authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      router.replace('/(tabs)');
+    if (isAuthenticated && !authLoading) {
+      router.replace("/(tabs)/shop");
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, authLoading]);
 
-  // Show loading while checking auth, portal, or during login
-  if (!isClient || authLoading || portalLoading) {
-    return <Loader variant="page" message="Loading..." />;
-  }
+  if (authLoading) return <Loader full message="Loading..." />;
 
-  // Show error state if portal is required but not found
-  if (portalParamFromUrl && !portal && !portalLoading) {
-    return (
-      <View style={styles.errorContainer}>
-        <Surface style={styles.errorCard} elevation={4}>
-          <Text variant="headlineSmall" style={styles.errorTitle}>
-            Portal "{portalParamFromUrl}" not found
-          </Text>
-          <Text variant="bodyLarge" style={styles.errorMessage}>
-            Please check the URL and try again.
-          </Text>
-        </Surface>
-      </View>
-    );
-  }
+  const filteredPortals = portals.filter((p) => {
+    const name = (p.school_name || p.portal_name || "").toLowerCase();
+    return name.includes(search.toLowerCase());
+  });
 
-  const onSubmit = formMethods.handleSubmit(async (values) => {
+  const handleSelectSchool = (p: Portal) => {
+    selectPortal(p);
+    setSchoolError("");
+    setDropdownVisible(false);
+    setSearch("");
+  };
+
+  const selectedName = portal
+    ? portal.school_name || portal.portal_name
+    : null;
+
+  const onSubmit = async (data: LoginForm) => {
+    if (!portal) {
+      setSchoolError("Please select your school");
+      return;
+    }
+    setIsSubmitting(true);
     try {
-      // Check if portal is available and has a valid portal_id
-      if (!portal || !portal.portal_id) {
-        showMessage("No valid portal found. Please check the portal parameter in the URL.", 'error');
-        return;
-      }
-
-      // Check student status before login
-      setIsCheckingStudent(true);
-
-      try {
-        // Call the public student status API
-        const studentStatus = await sdk.client.fetch(`/public/student/${values.student_enrollment_code}`) as StudentStatusResponse;
-
-        // Check if student is active
-        if (!studentStatus.is_active) {
-          showMessage("Your account is not active. Please contact support.", 'error');
-          return;
-        }
-
-        // If student is active, proceed with login
-        await login({
-          student_enrollment_code: values.student_enrollment_code,
-          password: values.password,
-          portal_id: portal.portal_id,
-        });
-
-      } catch (studentError) {
-        console.error("Student status check failed:", studentError);
-        showMessage("Unable to verify student status. Please try again.", 'error');
-      }
-    } catch (error: unknown) {
-      // Error is already handled in the login function
-      console.error("Login error:", error);
+      await login({
+        student_enrollment_code: data.enrollmentCode.trim(),
+        password: data.password,
+        portal_id: portal.portal_id,
+      });
     } finally {
-      setIsCheckingStudent(false);
+      setIsSubmitting(false);
     }
-  });
-
-  // Show error message if portal not found
-  if (portalError) {
-    return (
-      <View style={styles.errorContainer}>
-        <Surface style={styles.errorCard} elevation={4}>
-          <Text variant="headlineSmall" style={styles.errorTitle}>
-            Portal Not Found
-          </Text>
-          <Text variant="bodyLarge" style={styles.errorMessage}>
-            {portalError}
-          </Text>
-        </Surface>
-      </View>
-    );
-  }
+  };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <StatusBar style="light" />
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/* Header Section */}
-        <View style={[styles.headerSection, { paddingTop: insets.top + spacing.lg }]}>
-          {/* Logo */}
-          <View style={styles.logoContainer}>
-            <Image
-              source={require('@/assets/images/icon.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          </View>
-
-          {/* Welcome Text */}
-          <View style={styles.welcomeContainer}>
-            <Text variant="headlineLarge" style={styles.brandTitle}>
-              Good to see you again!
-            </Text>
-            <Text variant="bodyLarge" style={styles.subtitle}>
-              Your learning needs are unique and we do everything to ensure that they are met.
-            </Text>
-          </View>
-        </View>
-
-        {/* Login Form Section */}
-        <View style={styles.formSection}>
-          <Surface style={styles.loginCard} elevation={4}>
-            {/* Login Header */}
-            <View style={styles.loginHeader}>
-              <Text variant="headlineSmall" style={styles.loginTitle}>
-                Welcome to
-              </Text>
-              <Text variant="bodyMedium" style={styles.loginSubtitle}>
-                SUKORA
-              </Text>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.logoPlaceholder}>
+              <Text style={styles.logoText}>SS</Text>
             </View>
+            <Text style={styles.appName}>ShopSchool</Text>
+            <Text style={styles.tagline}>Your school store</Text>
+          </View>
 
-            {/* Login Form */}
-            <FormProvider {...formMethods}>
-              <View style={styles.formContainer}>
-                <TextField
-                  name="student_enrollment_code"
-                  control={formMethods.control}
+          {/* Login Card */}
+          <Surface style={styles.card} elevation={2}>
+            <Text style={styles.cardTitle}>Student Login</Text>
+
+            {/* School Dropdown */}
+            <Text style={styles.fieldLabel}>School</Text>
+            <Pressable
+              onPress={() => setDropdownVisible(true)}
+              style={[
+                styles.dropdownTrigger,
+                schoolError ? styles.dropdownError : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.dropdownText,
+                  !selectedName && styles.dropdownPlaceholder,
+                ]}
+                numberOfLines={1}
+              >
+                {selectedName || "Select your school…"}
+              </Text>
+              <Icon source="chevron-down" size={20} color={COLORS.textSecondary} />
+            </Pressable>
+            {schoolError ? (
+              <HelperText type="error">{schoolError}</HelperText>
+            ) : null}
+
+            <View style={styles.gap} />
+
+            {/* Enrollment Code */}
+            <Controller
+              control={control}
+              name="enrollmentCode"
+              rules={{
+                required: "Enrollment code is required",
+                minLength: { value: 3, message: "Too short" },
+              }}
+              render={({ field: { onChange, value, onBlur } }) => (
+                <TextInput
                   label="Enrollment Code"
-                  placeholder="Enter your enrollment code"
-                  type={FieldType.text}
-                  rules={{ required: "Enrollment Code is required" }}
+                  value={value}
+                  onChangeText={onChange}
+                  onBlur={onBlur}
+                  mode="outlined"
+                  outlineColor={COLORS.border}
+                  activeOutlineColor={COLORS.primary}
+                  style={styles.input}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  left={<TextInput.Icon icon="account-school" />}
+                  error={!!errors.enrollmentCode}
                 />
+              )}
+            />
+            {errors.enrollmentCode && (
+              <HelperText type="error">
+                {errors.enrollmentCode.message}
+              </HelperText>
+            )}
 
-                <TextField
-                  name="password"
-                  control={formMethods.control}
+            {/* Password */}
+            <Controller
+              control={control}
+              name="password"
+              rules={{
+                required: "Password is required",
+                minLength: { value: 4, message: "Password too short" },
+              }}
+              render={({ field: { onChange, value, onBlur } }) => (
+                <TextInput
                   label="Password"
-                  placeholder="Enter your password"
-                  type={FieldType.password}
-                  rules={{ required: "Password is required" }}
+                  value={value}
+                  onChangeText={onChange}
+                  onBlur={onBlur}
+                  mode="outlined"
+                  outlineColor={COLORS.border}
+                  activeOutlineColor={COLORS.primary}
+                  style={styles.input}
+                  secureTextEntry={!showPassword}
+                  left={<TextInput.Icon icon="lock" />}
+                  right={
+                    <TextInput.Icon
+                      icon={showPassword ? "eye-off" : "eye"}
+                      onPress={() => setShowPassword((v) => !v)}
+                    />
+                  }
+                  error={!!errors.password}
                 />
+              )}
+            />
+            {errors.password && (
+              <HelperText type="error">{errors.password.message}</HelperText>
+            )}
 
-                <Button
-                  mode="contained"
-                  onPress={onSubmit}
-                  disabled={authLoading || isCheckingStudent}
-                  style={styles.loginButton}
-                  labelStyle={styles.loginButtonLabel}
-                  icon={authLoading || isCheckingStudent ? undefined : "login"}
-                >
-                  {authLoading || isCheckingStudent ? (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="small" color={colors.surface} />
-                      <Text variant="bodyMedium" style={styles.loadingText}>
-                        {isCheckingStudent ? 'Verifying...' : 'Logging in...'}
-                      </Text>
-                    </View>
-                  ) : (
-                    'Login'
-                  )}
-                </Button>
-              </View>
-            </FormProvider>
-
-            {/* Footer Links */}
-            <View style={styles.footerLinks}>
-              <Text variant="bodySmall" style={styles.footerText}>
-                Having trouble logging in?{' '}
-                <TouchableOpacity onPress={() => Linking.openURL('mailto:epistemo@shopschool.in')}>
-                  <Text style={styles.linkText}>Contact Support</Text>
-                </TouchableOpacity>
-              </Text>
-            </View>
+            <Button
+              mode="contained"
+              onPress={handleSubmit(onSubmit)}
+              style={styles.loginBtn}
+              contentStyle={styles.loginBtnContent}
+              labelStyle={styles.loginBtnLabel}
+              loading={isSubmitting}
+              disabled={isSubmitting}
+              buttonColor={COLORS.primary}
+            >
+              {isSubmitting ? "Signing in…" : "Sign In"}
+            </Button>
           </Surface>
-        </View>
 
-        {/* Bottom Spacing */}
-        <View style={[styles.bottomSpacing, { paddingBottom: insets.bottom }]} />
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <Text style={styles.footer}>
+            © {new Date().getFullYear()} Samaikya Edu Society
+          </Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* School picker bottom sheet modal */}
+      <PaperPortal>
+        <Modal
+          visible={dropdownVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setDropdownVisible(false)}
+        >
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setDropdownVisible(false)}
+          >
+            <Pressable style={styles.modalSheet} onPress={() => {}}>
+              <Text style={styles.modalTitle}>Select School</Text>
+              <Divider />
+              <TextInput
+                placeholder="Search school…"
+                value={search}
+                onChangeText={setSearch}
+                mode="outlined"
+                outlineColor={COLORS.border}
+                activeOutlineColor={COLORS.primary}
+                style={styles.searchInput}
+                left={<TextInput.Icon icon="magnify" />}
+                dense
+                autoFocus
+              />
+              {portalsLoading ? (
+                <Loader message="Loading schools…" />
+              ) : (
+                <FlatList
+                  data={filteredPortals}
+                  keyExtractor={(item) => item.portal_id}
+                  keyboardShouldPersistTaps="handled"
+                  style={styles.list}
+                  ItemSeparatorComponent={() => <Divider />}
+                  ListEmptyComponent={
+                    <Text style={styles.emptyText}>No schools found</Text>
+                  }
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.listItem,
+                        pressed && styles.listItemPressed,
+                        portal?.portal_id === item.portal_id &&
+                          styles.listItemSelected,
+                      ]}
+                      onPress={() => handleSelectSchool(item)}
+                    >
+                      <Text
+                        style={[
+                          styles.listItemText,
+                          portal?.portal_id === item.portal_id &&
+                            styles.listItemTextSelected,
+                        ]}
+                      >
+                        {item.school_name || item.portal_name}
+                      </Text>
+                      {portal?.portal_id === item.portal_id && (
+                        <Icon source="check" size={18} color={COLORS.primary} />
+                      )}
+                    </Pressable>
+                  )}
+                />
+              )}
+            </Pressable>
+          </Pressable>
+        </Modal>
+      </PaperPortal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: COLORS.background,
   },
-  scrollContainer: {
+  scrollContent: {
     flexGrow: 1,
+    padding: SPACING.md,
+    paddingTop: SPACING.xl,
   },
-  headerSection: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-    minHeight: '50%',
-    justifyContent: 'center',
-    alignItems: 'center',
+  header: {
+    alignItems: "center",
+    marginBottom: SPACING.lg,
   },
-  logoContainer: {
-    marginBottom: spacing.xl,
-  },
-  logo: {
+  logoPlaceholder: {
     width: 80,
     height: 80,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: SPACING.sm,
   },
-  welcomeContainer: {
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  welcomeTitle: {
-    color: colors.surface,
-    fontWeight: '300',
-    textAlign: 'center',
-  },
-  brandTitle: {
-    color: colors.surface,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  subtitle: {
-    color: colors.surface,
-    textAlign: 'center',
-    opacity: 0.9,
-    marginTop: spacing.sm,
-  },
-  formSection: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-    marginTop: -spacing.xl, // Overlap with header section
-    zIndex: 2,
-  },
-  loginCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 24,
-    padding: spacing.xl,
-    elevation: 8,
-  },
-  loginHeader: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  loginTitle: {
-    color: "#64748b",
-    fontWeight: 'bold',
-    marginBottom: spacing.sm,
-    fontSize: 16
-  },
-  loginSubtitle: {
-    color: colors.primary,
-    textAlign: 'center',
-    fontWeight: 'bold',
+  logoText: {
+    color: "#fff",
     fontSize: 28,
+    fontWeight: "700",
   },
-  formContainer: {
-    gap: spacing.lg,
+  appName: {
+    fontSize: FONT_SIZE.xxl,
+    fontWeight: "700",
+    color: COLORS.primary,
+    marginBottom: 4,
   },
-  loginButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.sm,
-    marginTop: spacing.md,
+  tagline: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textSecondary,
+    textAlign: "center",
   },
-  loginButtonLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.surface,
+  card: {
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
+    backgroundColor: COLORS.surface,
   },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+  cardTitle: {
+    fontSize: FONT_SIZE.xl,
+    fontWeight: "700",
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.md,
+    textAlign: "center",
   },
-  loadingText: {
-    color: colors.surface,
+  fieldLabel: {
+    fontSize: FONT_SIZE.sm,
+    fontWeight: "600",
+    color: COLORS.textSecondary,
+    marginBottom: 6,
   },
-  footerLinks: {
-    marginTop: spacing.xl,
-    alignItems: 'center',
+  dropdownTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 14,
+    backgroundColor: COLORS.surface,
   },
-  footerText: {
-    color: colors.text.secondary,
-    textAlign: 'center',
+  dropdownError: {
+    borderColor: COLORS.error,
   },
-  linkText: {
-    color: colors.primary,
-    fontWeight: 'bold',
-  },
-  errorContainer: {
+  dropdownText: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
-    backgroundColor: colors.background,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.textPrimary,
   },
-  errorCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: spacing.xl,
-    alignItems: 'center',
-    maxWidth: 400,
-    width: '100%',
+  dropdownPlaceholder: {
+    color: COLORS.textSecondary,
   },
-  errorTitle: {
-    color: colors.error,
-    fontWeight: 'bold',
-    marginBottom: spacing.md,
-    textAlign: 'center',
+  gap: {
+    height: SPACING.sm,
   },
-  errorMessage: {
-    color: colors.text.secondary,
-    textAlign: 'center',
+  input: {
+    backgroundColor: COLORS.surface,
+    marginBottom: SPACING.xs,
   },
-  bottomSpacing: {
-    height: spacing.xl,
+  loginBtn: {
+    marginTop: SPACING.md,
+    borderRadius: RADIUS.md,
+  },
+  loginBtnContent: {
+    paddingVertical: 6,
+  },
+  loginBtnLabel: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: "600",
+  },
+  footer: {
+    textAlign: "center",
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZE.xs,
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.md,
+  },
+  // Modal bottom sheet
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: RADIUS.lg,
+    borderTopRightRadius: RADIUS.lg,
+    maxHeight: "70%",
+    paddingTop: SPACING.md,
+  },
+  modalTitle: {
+    fontSize: FONT_SIZE.lg,
+    fontWeight: "700",
+    color: COLORS.textPrimary,
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.sm,
+  },
+  searchInput: {
+    margin: SPACING.sm,
+    backgroundColor: COLORS.surface,
+  },
+  list: {
+    flexGrow: 0,
+  },
+  listItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 14,
+  },
+  listItemPressed: {
+    backgroundColor: COLORS.background,
+  },
+  listItemSelected: {
+    backgroundColor: "#e8f4fd",
+  },
+  listItemText: {
+    flex: 1,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.textPrimary,
+  },
+  listItemTextSelected: {
+    color: COLORS.primary,
+    fontWeight: "600",
+  },
+  emptyText: {
+    textAlign: "center",
+    color: COLORS.textSecondary,
+    padding: SPACING.lg,
   },
 });

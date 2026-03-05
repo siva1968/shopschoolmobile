@@ -1,23 +1,43 @@
-enum Prefix {
-  STORE = "/store",
-}
+const BASE = "";
 
-export const Endpoint = {
-  customer: `${Prefix.STORE}/customers/me`,
-  customer_reset_password: `${Prefix.STORE}/customers/reset-password`,
-  categories: `${Prefix.STORE}/categories`,
-  addresses: `${Prefix.STORE}/customers/addresses`,
-  cart: `${Prefix.STORE}/carts`,
-  cart_address: (cart_id: string) => `${Prefix.STORE}/carts/${cart_id}/address`,
-  line_items: (cart_id: string) =>
-    `${Prefix.STORE}/carts/${cart_id}/line-items`,
-  orders: `${Prefix.STORE}/orders`,
-  payments: `${Prefix.STORE}/payments`,
-  payment_methods: `${Prefix.STORE}/payment-methods`,
-  regions: `${Prefix.STORE}/regions`,
-  cart_line_items: (cart_id: string) =>
-    `${Prefix.STORE}/carts/${cart_id}/line-items`,
-  line_item_attributes: `${Prefix.STORE}/line-item-attributes`,
+export const endpoints = {
+  // Auth
+  customer: `${BASE}/store/customers/me`,
+  customerResetPassword: `${BASE}/store/customers/reset-password`,
 
+  // Products
+  categories: `${BASE}/store/categories`,
+  category: (id: string) => `${BASE}/store/categories/${id}`,
+
+  // Addresses
+  addresses: `${BASE}/store/customers/addresses`,
+  address: (id: string) => `${BASE}/store/customers/addresses/${id}`,
+
+  // Cart
+  carts: `${BASE}/store/carts`,
+  cart: (id: string) => `${BASE}/store/carts/${id}`,
+  cartClear: (id: string) => `${BASE}/store/carts/${id}/clear`,
+  cartAddress: (id: string) => `${BASE}/store/carts/${id}/address`,
+  lineItems: (cartId: string) => `${BASE}/store/carts/${cartId}/line-items`,
+  lineItem: (cartId: string, itemId: string) =>
+    `${BASE}/store/carts/${cartId}/line-items/${itemId}`,
+
+  // Orders
+  orders: `${BASE}/store/orders`,
+  order: (id: string) => `${BASE}/store/orders/${id}`,
+
+  // Payments
+  payments: `${BASE}/store/payments`,
+  payment: (id: string) => `${BASE}/store/payments/${id}`,
+  paymentStatus: `${BASE}/store/payments/status`,
+  paymentMethods: `${BASE}/store/payment-methods`,
+  lineItemAttributes: `${BASE}/store/line-item-attributes`,
+
+  // Regions
+  regions: `${BASE}/store/regions`,
+
+  // Public (no auth)
   portals: `/public/portals`,
-};
+  maintenance: (portalId: string) => `/public/maintenance?portal=${portalId}`,
+  student: (enrollmentCode: string) => `/public/student/${enrollmentCode}`,
+} as const;

@@ -1,36 +1,43 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { PaperProvider } from 'react-native-paper';
-import 'react-native-reanimated';
+import "react-native-gesture-handler";
+import { useEffect } from "react";
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
+import { PaperProvider, MD3LightTheme } from "react-native-paper";
+import { AppProvider } from "../contexts/AppProvider";
+import { COLORS } from "../constants/theme";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
-import { AppProvider, } from '@/contexts';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import theme from '@/theme/theme';
+SplashScreen.preventAutoHideAsync();
+
+const paperTheme = {
+  ...MD3LightTheme,
+  colors: {
+    ...MD3LightTheme.colors,
+    primary: COLORS.primary,
+    secondary: COLORS.secondary,
+    background: COLORS.background,
+    surface: COLORS.surface,
+    error: COLORS.error,
+  },
+};
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
-  if (!loaded)
-    // Async font loading only occurs in development.
-    return null;
+  useEffect(() => {
+    SplashScreen.hideAsync();
+  }, []);
 
   return (
-    <PaperProvider theme={theme}>
-      <AppProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="+not-found" />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PaperProvider theme={paperTheme}>
+        <AppProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(tabs)" />
           </Stack>
           <StatusBar style="auto" />
-        </ThemeProvider>
-      </AppProvider>
-    </PaperProvider>
+        </AppProvider>
+      </PaperProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -1,50 +1,79 @@
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { Tabs } from 'expo-router';
-import React from 'react';
+import { useEffect } from "react";
+import { View, StyleSheet } from "react-native";
+import { Tabs, router } from "expo-router";
+import { Badge, Text } from "react-native-paper";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { useAuth } from "../../contexts/AuthContext";
+import { useCart } from "../../contexts/CartContext";
+import { COLORS } from "../../constants/theme";
 
-import { HapticTab } from '@/components/HapticTab';
-import TabBarBackground from '@/components/ui/TabBarBackground';
+type IconName = React.ComponentProps<typeof MaterialCommunityIcons>["name"];
 
-export default function TabLayout() {
+function TabIcon({
+  name,
+  focused,
+  badge,
+}: {
+  name: IconName;
+  focused: boolean;
+  badge?: number;
+}) {
+  return (
+    <View style={styles.iconContainer}>
+      <MaterialCommunityIcons
+        name={name}
+        size={26}
+        color={focused ? COLORS.primary : COLORS.textSecondary}
+      />
+      {badge && badge > 0 ? (
+        <Badge size={16} style={styles.badge}>
+          {badge > 9 ? "9+" : badge}
+        </Badge>
+      ) : null}
+    </View>
+  );
+}
+
+export default function TabsLayout() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const { cartItemCount } = useCart();
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.replace("/");
+    }
+  }, [isAuthenticated, isLoading]);
+
+  if (!isAuthenticated) return null;
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#2196F3', // Blue color for active tabs
-        tabBarInactiveTintColor: '#757575', // Gray color for inactive tabs
-        tabBarStyle: {
-          backgroundColor: 'white', // White background
-          borderBottomWidth: 18,
-          borderBottomLeftRadius: 16,
-          borderBottomRightRadius: 16,
-          height: 85,
-          paddingBottom: 8,
-          paddingTop: 8,
-          elevation: 8,
-          shadowColor: '#000',
-          shadowOffset: {
-            width: 0,
-            height: 2,
-          },
-          shadowOpacity: 0.25,
-          shadowRadius: 3.84,
-        },
         headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarBackground: TabBarBackground,
-        tabBarLabelStyle: {
-          fontSize: 14,
-          fontWeight: '500',
-        },
-      }}>
+        tabBarActiveTintColor: COLORS.primary,
+        tabBarInactiveTintColor: COLORS.textSecondary,
+        tabBarStyle: styles.tabBar,
+        tabBarLabelStyle: styles.tabLabel,
+      }}
+    >
       <Tabs.Screen
-        name="index"
+        name="shop"
         options={{
-          title: 'Shop',
-          tabBarIcon: ({ color, focused }) => (
-            <MaterialIcons 
-              name="store" 
-              size={26} 
-              color={focused ? '#2196F3' : '#757575'} 
+          title: "Shop",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon name="storefront-outline" focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="cart"
+        options={{
+          title: "Cart",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              name="cart-outline"
+              focused={focused}
+              badge={cartItemCount}
             />
           ),
         }}
@@ -52,42 +81,50 @@ export default function TabLayout() {
       <Tabs.Screen
         name="orders"
         options={{
-          title: 'Orders',
-          tabBarIcon: ({ color, focused }) => (
-            <MaterialIcons 
-              name="receipt-long" 
-              size={26} 
-              color={focused ? '#2196F3' : '#757575'} 
-            />
+          title: "Orders",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon name="receipt-outline" focused={focused} />
           ),
         }}
       />
       <Tabs.Screen
         name="account"
         options={{
-          title: 'Account',
-          tabBarIcon: ({ color, focused }) => (
-            <MaterialIcons 
-              name="account-circle" 
-              size={26} 
-              color={focused ? '#2196F3' : '#757575'} 
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="help"
-        options={{
-          title: 'Help',
-          tabBarIcon: ({ color, focused }) => (
-            <MaterialIcons 
-              name="help-outline" 
-              size={26} 
-              color={focused ? '#2196F3' : '#757575'} 
-            />
+          title: "Account",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon name="account-circle-outline" focused={focused} />
           ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBar: {
+    backgroundColor: COLORS.surface,
+    borderTopColor: COLORS.border,
+    borderTopWidth: 1,
+    height: 64,
+    paddingBottom: 8,
+    paddingTop: 6,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  iconContainer: {
+    position: "relative",
+  },
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -8,
+    backgroundColor: COLORS.secondary,
+  },
+});

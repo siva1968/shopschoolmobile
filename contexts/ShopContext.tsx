@@ -1,40 +1,36 @@
-import React, { createContext, ReactNode, useContext, useState } from 'react';
+import React, {
+    createContext,
+    ReactNode,
+    useContext,
+    useState,
+} from "react";
 
-interface ShopContextType {
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
+type ShopTab = "all" | "kits" | "uniforms";
+
+interface ShopContextValue {
+  activeTab: ShopTab;
+  setActiveTab: (tab: ShopTab) => void;
   searchQuery: string;
-  setSearchQuery: (query: string) => void;
+  setSearchQuery: (q: string) => void;
 }
 
-const ShopContext = createContext<ShopContextType | undefined>(undefined);
+const ShopContext = createContext<ShopContextValue | null>(null);
 
-interface ShopProviderProps {
-  children: ReactNode;
-}
-
-export const ShopProvider: React.FC<ShopProviderProps> = ({ children }) => {
-  const [activeTab, setActiveTab] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const value = {
-    activeTab,
-    setActiveTab,
-    searchQuery,
-    setSearchQuery,
-  };
+export function ShopProvider({ children }: { children: ReactNode }) {
+  const [activeTab, setActiveTab] = useState<ShopTab>("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   return (
-    <ShopContext.Provider value={value}>
+    <ShopContext.Provider
+      value={{ activeTab, setActiveTab, searchQuery, setSearchQuery }}
+    >
       {children}
     </ShopContext.Provider>
   );
-};
+}
 
-export const useShop = (): ShopContextType => {
-  const context = useContext(ShopContext);
-  if (context === undefined) {
-    throw new Error('useShop must be used within a ShopProvider');
-  }
-  return context;
-};
+export function useShop() {
+  const ctx = useContext(ShopContext);
+  if (!ctx) throw new Error("useShop must be used within ShopProvider");
+  return ctx;
+}

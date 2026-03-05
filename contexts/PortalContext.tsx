@@ -1,125 +1,94 @@
-'use client';
+import React, {
+    createContext,
+    ReactNode,
+    useCallback,
+    useContext,
+    useEffect,
+    useState,
+} from "react";
+import { apiGet } from "../lib/sdk";
+import { asyncStore } from "../lib/storage";
+import { endpoints } from "../shared/endpoints";
+import { Portal } from "../shared/types";
 
-import React, { createContext, ReactNode, Suspense, useContext, useMemo } from 'react';
-// import { useSearchParams } from 'next/navigation';
-import { useGetData } from '@/lib/use-api';
-import { Endpoint } from '@/shared';
-import { useAuth } from './AuthContext';
-
-interface Portal {
-  id?: string;
-  portal_id: string;
-  portal_name?: string;
-  school_name?: string;
-  name?: string;
-  domain?: string;
-  logo?: string;
-  address?: string;
-  status?: boolean;
-  is_active?: boolean;
-  theme?: Record<string, unknown>;
-  created_at?: string;
-  updated_at?: string;
-  deleted_at?: string | null;
-}
-
-interface PortalContextType {
+interface PortalContextValue {
   portal: Portal | null;
+  portals: Portal[];
   isLoading: boolean;
   error: string | null;
+  setPortalByName: (name: string) => Promise<boolean>;
+  selectPortal: (p: Portal) => Promise<void>;
+  loadPortals: () => Promise<void>;
 }
 
-const PortalContext = createContext<PortalContextType | undefined>(undefined);
+const PortalContext = createContext<PortalContextValue | null>(null);
 
-interface PortalProviderProps {
-  children: ReactNode;
-}
+export function PortalProvider({ children }: { children: ReactNode }) {
+  const [portals, setPortals] = useState<Portal[]>([]);
+  const [portal, setPortal] = useState<Portal | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-// Internal component that uses useSearchParams
-const PortalProviderInner: React.FC<PortalProviderProps> = ({ children }) => {
-  // const searchParams = useSearchParams();
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-  // const portalParam = searchParams.get('portal');
-  const portalParam = "epistemo"; // Temporary hardcoded value for testing
-
-  // Always fetch portals list - we'll use it for both authenticated and non-authenticated users
-  const shouldFetchPortalsList = true;
-
-  // Fetch portals list 
-  const {
-    data: portalsList,
-    isLoading: portalsListLoading,
-    error: portalsListError
-  } = useGetData<{ list: Portal[], count: number }>({
-    queryKey: ['portals-list'],
-    endpoint: Endpoint.portals,
-    enabled: shouldFetchPortalsList,
-    showErrorToast: false,
-  });
-
-  // Find matching portal from list
-  const matchedPortal = useMemo(() => {
-    if (!portalsList?.list) {
-      return null;
+  const loadPortals = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await apiGet<{ portals: Portal[] }>(endpoints.portals);
+      setPortals(res.portals || []);
+      // Restore saved portal
+      const savedPortalId = await asyncStore.getPortalId();
+      if (savedPortalId) {
+        const found = (res.portals || []).find(
+          (p) => p.portal_id === savedPortalId
+        );
+        if (found) setPortal(found);
+      }
+    } catch (err) {
+      setError("Failed to load portals. Check your connection.");
+    } finally {
+      setIsLoading(false);
     }
+  }, []);
 
-    // If authenticated, find by user's portal_id
-    if (isAuthenticated && user?.portal_id) {
-      return portalsList.list.find((portal: Portal) => portal.portal_id === user.portal_id) || null;
-    }
+  useEffect(() => {
+    loadPortals();
+  }, [loadPortals]);
 
-    // If not authenticated but has portal parameter, find by portal_name
-    if (!isAuthenticated && portalParam) {
-      return portalsList.list.find((portal: Portal) =>
-        portal.portal_name?.toLowerCase() === portalParam.toLowerCase()
-      ) || null;
-    }
+  const selectPortal = useCallback(async (p: Portal) => {
+    setPortal(p);
+    await asyncStore.setPortalId(p.portal_id);
+    await asyncStore.setPortalName(p.portal_name);
+  }, []);
 
-    return null;
-  }, [portalsList?.list, user?.portal_id, portalParam, isAuthenticated]);
-
-  // Determine final values based on current state
-  const portal = matchedPortal;
-  const isLoading = authLoading || portalsListLoading;
-  const error = portalsListError
-    ? `Failed to load portal data`
-    : isAuthenticated && user?.portal_id && !matchedPortal && !portalsListLoading
-      ? `Portal not found for user`
-      : !isAuthenticated && portalParam && !matchedPortal && !portalsListLoading
-        ? `Portal "${portalParam}" not found`
-        : null;
-
-  const value: PortalContextType = {
-    portal: portal || null,
-    isLoading,
-    error,
-  };
+  const setPortalByName = useCallback(
+    async (name: string): Promise<boolean> => {
+      const found = portals.find(
+        (p) =>
+          p.portal_name?.toLowerCase() === name.toLowerCase().trim() ||
+          p.school_name?.toLowerCase().includes(name.toLowerCase().trim())
+      );
+      if (found) {
+        setPortal(found);
+        await asyncStore.setPortalName(found.portal_name);
+        await asyncStore.setPortalId(found.portal_id);
+        return true;
+      }
+      return false;
+    },
+    [portals]
+  );
 
   return (
-    <PortalContext.Provider value={value}>
+    <PortalContext.Provider
+      value={{ portal, portals, isLoading, error, setPortalByName, selectPortal, loadPortals }}
+    >
       {children}
     </PortalContext.Provider>
   );
-};
+}
 
-// Fallback component for Suspense
-const PortalFallback = () => <div>Loading portal...</div>;
-
-// Main exported component with Suspense wrapper
-export const PortalProvider: React.FC<PortalProviderProps> = ({ children }) => {
-  return (
-    <Suspense fallback={<PortalFallback />}>
-      <PortalProviderInner>
-        {children}
-      </PortalProviderInner>
-    </Suspense>
-  );
-};
-
-export const usePortal = (): PortalContextType => {
-  const context = useContext(PortalContext);
-  if (!context) {
-    throw new Error('usePortal must be used within a PortalProvider');
-  }
-  return context;
-};
+export function usePortal() {
+  const ctx = useContext(PortalContext);
+  if (!ctx) throw new Error("usePortal must be used within PortalProvider");
+  return ctx;
+}
