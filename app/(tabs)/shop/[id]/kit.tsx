@@ -27,14 +27,6 @@ import { useGetData } from "../../../../lib/use-api";
 import { endpoints } from "../../../../shared/endpoints";
 import { Kit, Product, ProductVariant } from "../../../../shared/types";
 
-interface KitResponse {
-  category: {
-    id: string;
-    name: string;
-    kits?: Kit[];
-  };
-}
-
 const CATEGORIES_ORDER = ["Text Books", "Note Books", "Stationery"];
 
 function getCategoryName(product: Product): string {
@@ -81,33 +73,45 @@ function QuantityPicker({ value, max, onChange, disabled }: QtyPicker) {
 
 export default function KitDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { cartId, fetchCart, setShowCartDrawer, hasAddresses } = useCart();
+  const { cartId, cartData, fetchCart, setShowCartDrawer, hasAddresses } = useCart();
   const { user } = useAuth();
   const toast = useToast();
 
-  const { data, isLoading } = useGetData<KitResponse>(
-    ["category", id, "kit"],
-    `${endpoints.category(id!)}?filter=kit`
+  const { data, isLoading } = useGetData<{ list: Kit[] }>(
+    ["kits"],
+    endpoints.kits,
+    { staleTime: 60_000 }
   );
 
-  const kits = data?.category?.kits || [];
-  // Use first kit (or show selection)
-  const kit = kits[0] as Kit | undefined;
+  const kit = (data?.list || []).find((k) => k.id === id);
 
   // Map: variantId → quantity selected
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [adding, setAdding] = useState(false);
 
-  // Initialize quantities when kit loads
+  const cartVariantIds = useMemo(() => {
+    const all = [...(cartData?.items ?? []), ...(cartData?.custom_items ?? [])];
+    return new Set(all.map((i) => i.variant_id).filter(Boolean));
+  }, [cartData]);
+
+  const isInCart = useMemo(() => {
+    if (!kit) return false;
+    return kit.products?.some((p) =>
+      p.variants?.some((v) => cartVariantIds.has(v.id))
+    ) ?? false;
+  }, [kit, cartVariantIds]);
+
+  // Initialize quantities when kit loads — use product.qty as the recommended/default quantity
   React.useEffect(() => {
     if (!kit) return;
     const init: Record<string, number> = {};
     kit.products?.forEach((product) => {
+      const defaultQty = product.qty ?? 1;
       product.variants?.forEach((variant) => {
         if (kit.disable_textbook_customization) {
-          init[variant.id] = 1;
+          init[variant.id] = defaultQty;
         } else {
-          init[variant.id] = 1; // default quantity
+          init[variant.id] = defaultQty;
         }
       });
     });
@@ -185,11 +189,7 @@ export default function KitDetailScreen() {
 
     setAdding(true);
     try {
-      await apiPost(endpoints.lineItems(cartId), {
-        kit_id: kit.id,
-        kit_type: kit.type,
-        items: lineItems,
-      });
+      await apiPost(endpoints.lineItems(cartId), lineItems);
       await fetchCart();
       setShowCartDrawer(true);
       toast.success("Added to cart!");
@@ -357,11 +357,11 @@ export default function KitDetailScreen() {
             style={styles.addBtn}
             contentStyle={styles.addBtnContent}
             labelStyle={styles.addBtnLabel}
-            onPress={handleAddToCart}
+            onPress={isInCart ? () => router.push("/(tabs)/cart") : handleAddToCart}
             loading={adding}
             disabled={adding}
           >
-            Add to Cart
+            {isInCart ? "Go to Cart" : "Add to Cart"}
           </Button>
         </View>
       </Surface>

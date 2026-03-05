@@ -36,12 +36,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
 
   const fetchCustomerData = useCallback(async () => {
-    try {
-      const data = await apiGet<{ customer: User }>(endpoints.customer);
-      setUser(data.customer);
-    } catch {
-      // silently fail — will be handled by checkAuth
-    }
+    const data = await apiGet<User>(endpoints.customer);
+    setUser(data);
   }, []);
 
   const checkAuth = useCallback(async () => {
@@ -62,6 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
       await fetchCustomerData();
     } catch {
+      await storage.deleteToken();
+      delete api.defaults.headers.common["Authorization"];
       setUser(null);
     } finally {
       setIsLoading(false);
@@ -81,10 +79,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       try {
         // 1. Check student is active
-        const studentRes = await apiGet<{ student: { is_active: boolean } }>(
+        const studentRes = await apiGet<{ is_active: boolean }>(
           endpoints.student(params.student_enrollment_code)
         );
-        if (!studentRes.student?.is_active) {
+        if (!studentRes.is_active) {
           toast.error("Your enrollment code is inactive. Please contact school.");
           return;
         }
@@ -98,11 +96,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await storage.setToken(token);
         api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
-        // 4. Fetch customer
+        // 4. Fetch customer (throws on failure — caught below)
         await fetchCustomerData();
 
-        // 5. Navigate
-        router.replace("/(tabs)/shop");
+        // 5. Navigation handled by index.tsx useEffect once isAuthenticated && !authLoading
       } catch (err: unknown) {
         const axiosErr = err as { response?: { status?: number; data?: { message?: string } } };
         const status = axiosErr?.response?.status;

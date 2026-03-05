@@ -40,4 +40,8 @@ export const endpoints = {
   portals: `/public/portals`,
   maintenance: (portalId: string) => `/public/maintenance?portal=${portalId}`,
   student: (enrollmentCode: string) => `/public/student/${enrollmentCode}`,
+
+  // Store — category-filtered product lists
+  uniforms: `${BASE}/store/categories?filter=uniforms`,
+  kits: `${BASE}/store/categories?filter=kits`,
 } as const;

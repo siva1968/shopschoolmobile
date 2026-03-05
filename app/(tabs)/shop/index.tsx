@@ -27,17 +27,18 @@ import { useShop } from "../../../contexts/ShopContext";
 import { formatPrice } from "../../../lib/auth-utils";
 import { useGetData } from "../../../lib/use-api";
 import { endpoints } from "../../../shared/endpoints";
-import { Category, Kit, Uniform } from "../../../shared/types";
+import { Kit, Product } from "../../../shared/types";
 
 type TabValue = "all" | "kits" | "uniforms";
 
-interface CategoryWithProducts extends Category {
-  kits?: Kit[];
-  uniforms?: Uniform[];
+interface ListResponse {
+  list: Product[];
+  count?: number;
 }
 
-interface CategoriesResponse {
-  product_categories: CategoryWithProducts[];
+interface KitListResponse {
+  list: Kit[];
+  count?: number;
 }
 
 function ShopHeader() {
@@ -119,48 +120,75 @@ function StudentBanner() {
 }
 
 interface ProductCardProps {
-  item: Kit | Uniform;
+  item: Product | Kit;
   type: "kit" | "uniform";
-  categoryId: string;
+  productId: string;
 }
 
-function ProductCard({ item, type, categoryId }: ProductCardProps) {
-  const kit = item as Kit;
+// Resolve image src: handles base64, data URIs, and plain URLs
+function resolveImageSrc(raw?: string | null): string | null {
+  if (!raw) return null;
+  if (raw.startsWith("data:") || raw.startsWith("http://") || raw.startsWith("https://")) {
+    return raw;
+  }
+  // Assume base64
+  return `data:image/jpeg;base64,${raw}`;
+}
+
+function ProductCard({ item, type, productId }: ProductCardProps) {
   const isKit = type === "kit";
 
   const handlePress = () => {
-    router.push(`/(tabs)/shop/${categoryId}/${isKit ? "kit" : "uniform"}`);
+    router.push(`/(tabs)/shop/${productId}/${isKit ? "kit" : "uniform"}`);
   };
 
-  const price = isKit ? kit.total : undefined;
-  const isFree = isKit && kit.type === "free";
+  let displayPrice = 0;
+  let subtitle = "";
+  let imageSrc: string | null = null;
+
+  if (isKit) {
+    const kit = item as Kit;
+    displayPrice = kit.price ?? 0;
+    const count = kit.products?.length ?? 0;
+    subtitle = `${count} item${count !== 1 ? "s" : ""}`;
+    imageSrc = resolveImageSrc(kit.image_url);
+  } else {
+    const product = item as Product;
+    const prices = product.variants
+      ?.flatMap((v) => v.prices.map((p) => p.amount))
+      .filter((a) => a > 0) ?? [];
+    displayPrice = prices.length > 0 ? Math.min(...prices) : 0;
+    const count = product.variants?.length ?? 0;
+    subtitle = `${count} size${count !== 1 ? "s" : ""} available`;
+    imageSrc =
+      resolveImageSrc(product.image_url) ||
+      resolveImageSrc(product.thumbnail) ||
+      resolveImageSrc(product.images?.[0]?.url) ||
+      null;
+  }
 
   return (
     <TouchableOpacity onPress={handlePress} activeOpacity={0.85}>
       <Surface style={styles.card} elevation={1}>
-        {/* Card image / icon */}
+        {/* Card image / icon — full-width on top */}
         <View
           style={[
             styles.cardImageArea,
-            { backgroundColor: isKit ? "#e6f4fc" : "#fce4ec" },
+            !imageSrc && { backgroundColor: isKit ? "#e6f4fc" : "#fce4ec" },
           ]}
         >
-          <MaterialCommunityIcons
-            name={isKit ? "book-open-variant" : "tshirt-crew-outline"}
-            size={42}
-            color={isKit ? COLORS.primary : COLORS.secondary}
-          />
-          {isKit && (
-            <View style={styles.kitTypeBadge}>
-              <Text
-                style={[
-                  styles.kitTypeText,
-                  { color: isFree ? COLORS.success : COLORS.primary },
-                ]}
-              >
-                {isFree ? "FREE" : "BUNDLE"}
-              </Text>
-            </View>
+          {imageSrc ? (
+            <Image
+              source={{ uri: imageSrc }}
+              style={styles.cardImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <MaterialCommunityIcons
+              name={isKit ? "book-open-variant" : "tshirt-crew-outline"}
+              size={48}
+              color={isKit ? COLORS.primary : COLORS.secondary}
+            />
           )}
         </View>
 
@@ -169,27 +197,18 @@ function ProductCard({ item, type, categoryId }: ProductCardProps) {
           <Text style={styles.cardTitle} numberOfLines={2}>
             {item.title}
           </Text>
-          {isKit && (
-            <Text style={styles.cardSubtitle}>
-              {kit.products?.length || 0} items
+          {subtitle.length > 0 && (
+            <Text style={styles.cardSubtitle}>{subtitle}</Text>
+          )}
+          {displayPrice > 0 ? (
+            <Text style={styles.cardPrice}>
+              {isKit ? formatPrice(displayPrice) : `From ${formatPrice(displayPrice)}`}
             </Text>
-          )}
-          {price !== undefined && price > 0 && (
-            <Text style={styles.cardPrice}>{formatPrice(price)}</Text>
-          )}
-          {isFree && price === 0 && (
+          ) : (
             <Text style={[styles.cardPrice, { color: COLORS.success }]}>
               Free
             </Text>
           )}
-        </View>
-
-        <View style={styles.cardAction}>
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={22}
-            color={COLORS.textSecondary}
-          />
         </View>
       </Surface>
     </TouchableOpacity>
@@ -199,27 +218,30 @@ function ProductCard({ item, type, categoryId }: ProductCardProps) {
 export default function ShopScreen() {
   const { activeTab, setActiveTab, searchQuery, setSearchQuery } = useShop();
 
-  const { data, isLoading, refetch, isRefetching } =
-    useGetData<CategoriesResponse>(
-      ["categories"],
-      endpoints.categories,
-      { staleTime: 60_000 }
-    );
+  const {
+    data: uniformsData,
+    isLoading: uniformsLoading,
+    refetch: refetchUniforms,
+    isRefetching: isRefetchingUniforms,
+  } = useGetData<ListResponse>(["uniforms"], endpoints.uniforms, { staleTime: 60_000 });
 
-  const categories = data?.product_categories || [];
+  const {
+    data: kitsData,
+    isLoading: kitsLoading,
+    refetch: refetchKits,
+    isRefetching: isRefetchingKits,
+  } = useGetData<KitListResponse>(["kits"], endpoints.kits, { staleTime: 60_000 });
+
+  const isLoading = uniformsLoading || kitsLoading;
+  const isRefetching = isRefetchingUniforms || isRefetchingKits;
+  const refetch = () => { refetchUniforms(); refetchKits(); };
 
   // Flatten all kits and uniforms for display
   const { allKits, allUniforms } = useMemo(() => {
-    const kits: { item: Kit; categoryId: string }[] = [];
-    const uniforms: { item: Uniform; categoryId: string }[] = [];
-    categories.forEach((cat) => {
-      cat.kits?.forEach((k) => kits.push({ item: k, categoryId: cat.id }));
-      cat.uniforms?.forEach((u) =>
-        uniforms.push({ item: u, categoryId: cat.id })
-      );
-    });
+    const kits = (kitsData?.list || []).map((k) => ({ item: k as Kit, productId: k.id }));
+    const uniforms = (uniformsData?.list || []).map((p) => ({ item: p as Product, productId: p.id }));
     return { allKits: kits, allUniforms: uniforms };
-  }, [categories]);
+  }, [uniformsData, kitsData]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -235,8 +257,8 @@ export default function ShopScreen() {
   }, [allKits, allUniforms, searchQuery, activeTab]);
 
   type FlatItem =
-    | { type: "kit"; item: Kit; categoryId: string }
-    | { type: "uniform"; item: Uniform; categoryId: string }
+    | { type: "kit"; item: Kit; productId: string }
+    | { type: "uniform"; item: Product; productId: string }
     | { type: "sectionHeader"; title: string };
 
   const listData: FlatItem[] = useMemo(() => {
@@ -244,15 +266,15 @@ export default function ShopScreen() {
     if (filtered.kits.length > 0) {
       if (activeTab === "all")
         result.push({ type: "sectionHeader", title: "Book & Stationery Kits" });
-      filtered.kits.forEach(({ item, categoryId }) =>
-        result.push({ type: "kit", item, categoryId })
+      filtered.kits.forEach(({ item, productId }) =>
+        result.push({ type: "kit", item, productId })
       );
     }
     if (filtered.uniforms.length > 0) {
       if (activeTab === "all")
         result.push({ type: "sectionHeader", title: "School Uniforms" });
-      filtered.uniforms.forEach(({ item, categoryId }) =>
-        result.push({ type: "uniform", item, categoryId })
+      filtered.uniforms.forEach(({ item, productId }) =>
+        result.push({ type: "uniform", item, productId })
       );
     }
     return result;
@@ -313,7 +335,7 @@ export default function ShopScreen() {
         data={listData}
         keyExtractor={(item, i) => {
           if (item.type === "sectionHeader") return `header-${item.title}`;
-          return `${item.type}-${item.categoryId}-${i}`;
+          return `${item.type}-${item.productId}-${i}`;
         }}
         renderItem={({ item }) => {
           if (item.type === "sectionHeader") {
@@ -326,7 +348,7 @@ export default function ShopScreen() {
               <ProductCard
                 item={item.item}
                 type={item.type}
-                categoryId={item.categoryId}
+                productId={item.productId}
               />
             </View>
           );
@@ -453,18 +475,21 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   card: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "column",
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.surface,
     overflow: "hidden",
   },
   cardImageArea: {
-    width: 80,
-    height: 80,
+    width: "100%",
+    height: 160,
     alignItems: "center",
     justifyContent: "center",
-    position: "relative",
+    backgroundColor: COLORS.background,
+  },
+  cardImage: {
+    width: "100%",
+    height: "100%",
   },
   kitTypeBadge: {
     position: "absolute",
@@ -481,7 +506,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   cardContent: {
-    flex: 1,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
   },
@@ -500,9 +524,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     fontWeight: "700",
     color: COLORS.primary,
-  },
-  cardAction: {
-    paddingRight: SPACING.sm,
   },
   empty: {
     alignItems: "center",

@@ -1,6 +1,6 @@
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
     Alert,
     Image,
@@ -23,14 +23,11 @@ import { formatPrice } from "../../../../lib/auth-utils";
 import { apiPost } from "../../../../lib/sdk";
 import { useGetData } from "../../../../lib/use-api";
 import { endpoints } from "../../../../shared/endpoints";
-import { Product, ProductVariant, Uniform } from "../../../../shared/types";
+import { Product, ProductVariant } from "../../../../shared/types";
 
 interface UniformResponse {
-  category: {
-    id: string;
-    name: string;
-    uniforms?: Uniform[];
-  };
+  list: Product[];
+  count?: number;
 }
 
 function getAvailableQuantity(variant: ProductVariant): number {
@@ -105,22 +102,28 @@ function VariantSelector({
 
 export default function UniformDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { cartId, fetchCart, setShowCartDrawer, hasAddresses } = useCart();
+  const { cartId, cartData, fetchCart, setShowCartDrawer, hasAddresses } = useCart();
   const toast = useToast();
 
   const { data, isLoading } = useGetData<UniformResponse>(
-    ["category", id, "uniform"],
-    `${endpoints.category(id!)}?filter=uniform`
+    ["uniforms"],
+    endpoints.uniforms
   );
 
-  const uniforms = data?.category?.uniforms || [];
+  const product = data?.list?.find((p) => p.id === id);
 
-  // Map productId → selected variantId
-  const [selections, setSelections] = useState<Record<string, string>>({});
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
-  const handleSelect = useCallback((productId: string, variantId: string) => {
-    setSelections((prev) => ({ ...prev, [productId]: variantId }));
+  const cartVariantIds = useMemo(() => {
+    const all = [...(cartData?.items ?? []), ...(cartData?.custom_items ?? [])];
+    return new Set(all.map((i) => i.variant_id).filter(Boolean));
+  }, [cartData]);
+
+  const isInCart = !!(selectedVariantId && cartVariantIds.has(selectedVariantId));
+
+  const handleSelect = useCallback((variantId: string) => {
+    setSelectedVariantId(variantId);
   }, []);
 
   const handleAddToCart = useCallback(async () => {
@@ -143,24 +146,16 @@ export default function UniformDetailScreen() {
       return;
     }
 
-    const selectedItems = Object.entries(selections)
-      .filter(([, variantId]) => !!variantId)
-      .map(([, variantId]) => ({ variant_id: variantId, quantity: 1 }));
-
-    if (selectedItems.length === 0) {
-      toast.warning("Please select at least one size.");
+    if (!selectedVariantId) {
+      toast.warning("Please select a size.");
       return;
     }
 
     setAdding(true);
     try {
-      // Add each uniform item to cart
-      for (const item of selectedItems) {
-        await apiPost(endpoints.lineItems(cartId), {
-          items: [item],
-          item_type: "uniform",
-        });
-      }
+      await apiPost(endpoints.lineItems(cartId), [
+        { variant_id: selectedVariantId, quantity: 1 },
+      ]);
       await fetchCart();
       setShowCartDrawer(true);
       toast.success("Added to cart!");
@@ -174,7 +169,7 @@ export default function UniformDetailScreen() {
     } finally {
       setAdding(false);
     }
-  }, [cartId, selections, fetchCart, setShowCartDrawer, toast, hasAddresses]);
+  }, [cartId, selectedVariantId, fetchCart, setShowCartDrawer, toast, hasAddresses]);
 
   if (isLoading) {
     return (
@@ -184,7 +179,7 @@ export default function UniformDetailScreen() {
     );
   }
 
-  if (uniforms.length === 0) {
+  if (!product) {
     return (
       <View style={styles.center}>
         <MaterialCommunityIcons
@@ -192,12 +187,20 @@ export default function UniformDetailScreen() {
           size={60}
           color={COLORS.border}
         />
-        <Text style={styles.emptyText}>No uniforms found</Text>
+        <Text style={styles.emptyText}>Uniform not found</Text>
       </View>
     );
   }
 
-  const uniform = uniforms[0];
+  const imageBase64 = product.product_attributes?.image_url;
+  const imageUri = imageBase64
+    ? `data:image/${imageBase64.startsWith("iVBOR") ? "png" : "jpeg"};base64,${imageBase64}`
+    : null;
+
+  const selectedVariant = product.variants.find((v) => v.id === selectedVariantId);
+  const displayPrice = selectedVariant
+    ? getPrice(selectedVariant)
+    : Math.min(...product.variants.map(getPrice).filter((p) => p > 0));
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
@@ -205,62 +208,35 @@ export default function UniformDetailScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Uniform header */}
+        {/* Uniform header / image */}
         <Surface style={styles.header} elevation={0}>
-          <View
-            style={[styles.iconArea, { backgroundColor: "#fce4ec" }]}
-          >
-            <MaterialCommunityIcons
-              name="tshirt-crew-outline"
-              size={60}
-              color={COLORS.secondary}
+          {imageUri ? (
+            <Image
+              source={{ uri: imageUri }}
+              style={styles.productImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.iconArea, { backgroundColor: "#fce4ec" }]}>
+              <MaterialCommunityIcons
+                name="tshirt-crew-outline"
+                size={60}
+                color={COLORS.secondary}
+              />
+            </View>
+          )}
+          <View style={styles.productBody}>
+            <Text style={styles.title}>{product.title}</Text>
+            <Text style={styles.productPrice}>
+              {displayPrice > 0 ? formatPrice(displayPrice) : "Select size for price"}
+            </Text>
+            <VariantSelector
+              product={product}
+              selectedVariantId={selectedVariantId}
+              onSelect={handleSelect}
             />
           </View>
-          <Text style={styles.title}>{uniform.title}</Text>
         </Surface>
-
-        {/* Products */}
-        {(uniform.products || []).map((product) => {
-          const selectedVariantId = selections[product.id] || null;
-          const selectedVariant = product.variants.find(
-            (v) => v.id === selectedVariantId
-          );
-          const price = selectedVariant
-            ? getPrice(selectedVariant)
-            : Math.min(...product.variants.map(getPrice).filter((p) => p > 0));
-
-          // Show product image if available (base64)
-          const imageUrl =
-            product.images?.[0]?.url || product.thumbnail;
-          const isBase64 = imageUrl?.startsWith("data:image");
-
-          return (
-            <Surface key={product.id} style={styles.productCard} elevation={1}>
-              {imageUrl && (
-                <Image
-                  source={{
-                    uri: isBase64
-                      ? imageUrl
-                      : `data:image/jpeg;base64,${imageUrl}`,
-                  }}
-                  style={styles.productImage}
-                  resizeMode="cover"
-                />
-              )}
-              <View style={styles.productBody}>
-                <Text style={styles.productTitle}>{product.title}</Text>
-                <Text style={styles.productPrice}>
-                  {price > 0 ? formatPrice(price) : "Select size for price"}
-                </Text>
-                <VariantSelector
-                  product={product}
-                  selectedVariantId={selectedVariantId}
-                  onSelect={(vId) => handleSelect(product.id, vId)}
-                />
-              </View>
-            </Surface>
-          );
-        })}
 
         <View style={{ height: 120 }} />
       </ScrollView>
@@ -271,20 +247,20 @@ export default function UniformDetailScreen() {
           <View>
             <Text style={styles.totalLabel}>Selected</Text>
             <Text style={styles.selectedCount}>
-              {Object.values(selections).filter(Boolean).length} item(s)
+              {selectedVariantId ? "1 item selected" : "No size selected"}
             </Text>
           </View>
           <Button
             mode="contained"
-            buttonColor={COLORS.secondary}
+            buttonColor={isInCart ? COLORS.primary : COLORS.secondary}
             style={styles.addBtn}
             contentStyle={styles.addBtnContent}
             labelStyle={styles.addBtnLabel}
-            onPress={handleAddToCart}
+            onPress={isInCart ? () => router.push("/(tabs)/cart") : handleAddToCart}
             loading={adding}
             disabled={adding}
           >
-            Add to Cart
+            {isInCart ? "Go to Cart" : "Add to Cart"}
           </Button>
         </View>
       </Surface>

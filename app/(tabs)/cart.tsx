@@ -25,35 +25,54 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useCart } from "../../contexts/CartContext";
 import { useToast } from "../../contexts/ToastContext";
 import { formatPrice } from "../../lib/auth-utils";
-import { apiPatch, apiPost } from "../../lib/sdk";
+import RazorpayWebView, { RazorpaySuccessResponse } from "../../components/common/RazorpayWebView";
+import { apiDelete, apiPatch, apiPost } from "../../lib/sdk";
 import { useGetData } from "../../lib/use-api";
 import { endpoints } from "../../shared/endpoints";
 import { Address, CartLineItem, PaymentMethod } from "../../shared/types";
 
 function CartItemRow({ item }: { item: CartLineItem }) {
   const isKit = item.item_type === "kit";
+  const isFreeKit = isKit && item.class_kit_type === "free";
+  const itemCount = item.cart_line_item_ids?.length ?? 0;
+
   return (
     <View style={styles.itemRow}>
       <View
         style={[
           styles.itemIcon,
-          { backgroundColor: isKit ? "#e6f4fc" : "#fce4ec" },
+          { backgroundColor: isKit ? (isFreeKit ? "#e8f5e9" : "#e6f4fc") : "#fce4ec" },
         ]}
       >
         <MaterialCommunityIcons
           name={isKit ? "book-open-variant" : "tshirt-crew-outline"}
           size={22}
-          color={isKit ? COLORS.primary : COLORS.secondary}
+          color={isKit ? (isFreeKit ? COLORS.success : COLORS.primary) : COLORS.secondary}
         />
       </View>
       <View style={styles.itemInfo}>
         <Text style={styles.itemTitle} numberOfLines={2}>
           {item.product_title || "Item"}
         </Text>
-        {item.variant_title && item.variant_title !== "Default Variant" && (
-          <Text style={styles.itemVariant}>{item.variant_title}</Text>
+        {isKit ? (
+          <View style={styles.kitMeta}>
+            <View style={[styles.kitBadge, { backgroundColor: isFreeKit ? "#e8f5e9" : "#e6f4fc" }]}>
+              <Text style={[styles.kitBadgeText, { color: isFreeKit ? COLORS.success : COLORS.primary }]}>
+                {isFreeKit ? "FREE KIT" : "BUNDLE KIT"}
+              </Text>
+            </View>
+            {itemCount > 0 && (
+              <Text style={styles.itemQty}>{itemCount} item{itemCount !== 1 ? "s" : ""}</Text>
+            )}
+          </View>
+        ) : (
+          <>
+            {item.variant_title && item.variant_title !== "Default variant" && item.variant_title !== "Default Variant" && (
+              <Text style={styles.itemVariant}>Size: {item.variant_title}</Text>
+            )}
+            <Text style={styles.itemQty}>Qty: {item.quantity}</Text>
+          </>
         )}
-        <Text style={styles.itemQty}>Qty: {item.quantity}</Text>
       </View>
       <Text style={styles.itemPrice}>
         {formatPrice(item.subtotal ?? item.unit_price * item.quantity)}
@@ -135,22 +154,29 @@ export default function CartScreen() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [showRazorpayWebView, setShowRazorpayWebView] = useState(false);
+  const [rzpWebViewOptions, setRzpWebViewOptions] = useState<Parameters<typeof RazorpayWebView>[0]["options"] | null>(null);
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
 
   const addresses = user?.addresses || [];
 
-  const { data: paymentMethodsData } = useGetData<{ payment_methods: PaymentMethod[] }>(
+  const { data: paymentMethodsData } = useGetData<{ list: PaymentMethod[] }>(
     ["payment-methods"],
     endpoints.paymentMethods,
     { enabled: !!cartId }
   );
-  const paymentMethods = (paymentMethodsData?.payment_methods || []).filter(
+  const paymentMethods = (paymentMethodsData?.list || []).filter(
     (m) => m.is_active
   );
 
-  const allItems = [
-    ...(cartData?.custom_items || []),
-    ...(cartData?.items || []),
-  ];
+  // Auto-select first active payment method
+  React.useEffect(() => {
+    if (paymentMethods.length > 0 && !selectedPaymentMethod) {
+      setSelectedPaymentMethod(paymentMethods[0].id);
+    }
+  }, [paymentMethods]);
+
+  const allItems = cartData?.custom_items || [];
   const isEmpty = allItems.length === 0;
   const total = cartData?.total || 0;
   const isFreeOrder = total === 0;
@@ -250,31 +276,50 @@ export default function CartScreen() {
     toast,
   ]);
 
+  // Step 1: confirm dialog → create payment session → open WebView
   const handleRazorpayPayment = useCallback(async () => {
     setShowPaymentDialog(false);
     setIsPlacingOrder(true);
     try {
-      // 1. Create payment session
       const paymentRes = await apiPost<{
-        payment: { id: string; razorpay_order?: { id: string } };
-      }>(endpoints.payments, { cart_id: cartId });
-      const sessionId = paymentRes.payment?.id;
-      const rzpOrderId = paymentRes.payment?.razorpay_order?.id;
+        payment_session: {
+          id: string;
+          currency_code?: string;
+          data?: { razorpay_order?: { id: string; amount: number } };
+        };
+        razorpay_order: { id: string; amount: number; currency: string };
+      }>(endpoints.payments, { amount: total, cart_id: cartId });
+
+      const sessionId = paymentRes.payment_session?.id ?? null;
+      const rzpOrderId =
+        paymentRes.razorpay_order?.id ||
+        paymentRes.payment_session?.data?.razorpay_order?.id;
+      const rzpOrderAmount =
+        paymentRes.razorpay_order?.amount ||
+        paymentRes.payment_session?.data?.razorpay_order?.amount ||
+        total * 100;
+      const rzpCurrency =
+        paymentRes.razorpay_order?.currency ||
+        paymentRes.payment_session?.currency_code?.toUpperCase() ||
+        "INR";
 
       if (!rzpOrderId || !sessionId) {
         toast.error("Payment session creation failed.");
+        setIsPlacingOrder(false);
         return;
       }
 
-      // 2. Open Razorpay
-      const RazorpayCheckout = require("react-native-razorpay").default;
       const method = paymentMethods.find((m) => m.id === selectedPaymentMethod);
       const billing = getAddress(billingAddressId);
 
-      const rzpOptions = {
+      // Store session ID for cleanup on dismiss
+      setPendingSessionId(sessionId);
+
+      // Build options exactly like medusafront — pass to WebView HTML
+      setRzpWebViewOptions({
         key: method?.config?.razorpay_id || "",
-        amount: total,
-        currency: cartData?.currency_code?.toUpperCase() || "INR",
+        amount: rzpOrderAmount,
+        currency: rzpCurrency,
         order_id: rzpOrderId,
         name: "ShopSchool",
         description: "School Kit & Uniform Order",
@@ -283,59 +328,64 @@ export default function CartScreen() {
           email: billing?.email || user?.email || "",
           contact: billing?.phone || user?.phone || "",
         },
-      };
-
-      const rzpResponse = await RazorpayCheckout.open(rzpOptions);
-
-      // 3. Confirm payment
-      await apiPatch(endpoints.cart(cartId!), {
-        payment_session_id: sessionId,
-        razorpay_payment_id: rzpResponse.razorpay_payment_id,
-        razorpay_order_id: rzpResponse.razorpay_order_id,
-        razorpay_signature: rzpResponse.razorpay_signature,
+        theme: { color: "#1976d2" },
       });
 
-      // 4. GST attributes
-      await apiPost(endpoints.lineItemAttributes, { cart_id: cartId });
+      setShowRazorpayWebView(true);
+      setIsPlacingOrder(false);
+    } catch (err: unknown) {
+      console.error("[RAZORPAY] Session creation error:", JSON.stringify(err));
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      toast.error(e?.response?.data?.message || e?.message || "Failed to initiate payment.");
+      setIsPlacingOrder(false);
+    }
+  }, [cartId, total, selectedPaymentMethod, paymentMethods, billingAddressId, addresses, user, toast]);
 
+  // Step 2a: WebView success → confirm order on backend
+  const handleRazorpaySuccess = useCallback(async (rzpResponse: RazorpaySuccessResponse) => {
+    setShowRazorpayWebView(false);
+    setIsPlacingOrder(true);
+    try {
+      await apiPatch(endpoints.cart(cartId!), {
+        payment_session_id: pendingSessionId,
+        response: {
+          razorpay_payment_id: rzpResponse.razorpay_payment_id,
+          razorpay_order_id: rzpResponse.razorpay_order_id,
+          razorpay_signature: rzpResponse.razorpay_signature,
+        },
+      });
+      await apiPost(endpoints.lineItemAttributes, { cart_id: cartId });
       toast.success("Order placed successfully!");
       router.replace("/(tabs)/orders");
     } catch (err: unknown) {
-      const axiosErr = err as {
-        code?: number;
-        description?: string;
-        response?: { data?: { message?: string } };
-      };
-      if (axiosErr?.code === 0) {
-        // User cancelled Razorpay
-        toast.info("Payment cancelled.");
-        // Clean up payment session
-        try {
-          // No session ID available here to delete; will be handled server-side
-        } catch {
-          // ignore
-        }
-      } else {
-        toast.error(
-          axiosErr?.description ||
-            axiosErr?.response?.data?.message ||
-            "Payment failed"
-        );
-      }
+      console.error("[RAZORPAY] Order confirm error:", JSON.stringify(err));
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      toast.error(e?.response?.data?.message || e?.message || "Payment received but order confirmation failed. Please contact support.");
     } finally {
       setIsPlacingOrder(false);
+      setPendingSessionId(null);
     }
-  }, [
-    cartId,
-    cartData,
-    total,
-    selectedPaymentMethod,
-    paymentMethods,
-    billingAddressId,
-    addresses,
-    user,
-    toast,
-  ]);
+  }, [cartId, pendingSessionId, toast]);
+
+  // Step 2b: WebView dismissed without paying
+  const handleRazorpayDismiss = useCallback(async () => {
+    setShowRazorpayWebView(false);
+    toast.info("Payment cancelled.");
+    try {
+      if (pendingSessionId) await apiDelete(endpoints.payment(pendingSessionId));
+    } catch {
+      // ignore
+    } finally {
+      setPendingSessionId(null);
+    }
+  }, [pendingSessionId, toast]);
+
+  // Step 2c: WebView payment failure
+  const handleRazorpayError = useCallback((description: string) => {
+    setShowRazorpayWebView(false);
+    toast.error(description || "Payment failed. Please try again.");
+    setPendingSessionId(null);
+  }, [toast]);
 
   if (cartLoading && !cartData) {
     return <Loader full message="Loading cart..." />;
@@ -567,6 +617,17 @@ export default function CartScreen() {
           </Dialog.Actions>
         </Dialog>
       </Portal>
+
+      {/* Razorpay WebView — loads checkout.razorpay.com just like medusafront */}
+      {rzpWebViewOptions && (
+        <RazorpayWebView
+          visible={showRazorpayWebView}
+          options={rzpWebViewOptions}
+          onSuccess={handleRazorpaySuccess}
+          onDismiss={handleRazorpayDismiss}
+          onError={handleRazorpayError}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -637,6 +698,17 @@ const styles = StyleSheet.create({
   },
   itemVariant: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
   itemQty: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
+  kitMeta: { flexDirection: "row", alignItems: "center", gap: SPACING.xs, marginTop: 2 },
+  kitBadge: {
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  kitBadgeText: {
+    fontSize: 9,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
   itemPrice: {
     fontSize: FONT_SIZE.sm,
     fontWeight: "700",

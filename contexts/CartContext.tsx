@@ -37,8 +37,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
   const { isAuthenticated, user } = useAuth();
 
-  const cartItemCount =
-    (cartData?.custom_items?.length ?? 0) + (cartData?.items?.length ?? 0);
+  const cartItemCount = cartData?.custom_items?.length ?? 0;
 
   const hasAddresses = !!(
     user?.addresses && user.addresses.length > 0
@@ -48,8 +47,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (!cartId) return;
     setCartLoading(true);
     try {
-      const data = await apiGet<{ cart: CartData }>(endpoints.cart(cartId));
-      const cart = data.cart;
+      const cart = await apiGet<CartData>(endpoints.cart(cartId));
       // If cart was completed, reset
       if (cart.completed_at) {
         await asyncStore.deleteCartId();
@@ -83,13 +81,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
         toast.error("Could not find region. Please try again.");
         return null;
       }
-      const cartRes = await apiPost<{ cart: CartData }>(endpoints.carts, {
+      const cartRes = await apiPost<CartData>(endpoints.carts, {
         region_id: indianRegion.id,
       });
-      const newCartId = cartRes.cart.id;
+      const newCartId = cartRes.id;
       await asyncStore.setCartId(newCartId);
       setCartId(newCartId);
-      setCartData(cartRes.cart);
+      setCartData(cartRes);
       return newCartId;
     } catch {
       toast.error("Failed to create cart.");

@@ -33,12 +33,12 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await apiGet<{ portals: Portal[] }>(endpoints.portals);
-      setPortals(res.portals || []);
+      const res = await apiGet<{ list: Portal[]; count: number }>(endpoints.portals);
+      setPortals(res.list || []);
       // Restore saved portal
       const savedPortalId = await asyncStore.getPortalId();
       if (savedPortalId) {
-        const found = (res.portals || []).find(
+        const found = (res.list || []).find(
           (p) => p.portal_id === savedPortalId
         );
         if (found) setPortal(found);

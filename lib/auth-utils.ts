@@ -50,10 +50,9 @@ export function reconstructEmail(email?: string): string {
  * Format currency amount (paise → rupees).
  */
 export function formatPrice(amount: number, currency = "INR"): string {
-  const rupees = amount / 100;
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency,
     minimumFractionDigits: 0,
-  }).format(rupees);
+  }).format(amount);
 }
