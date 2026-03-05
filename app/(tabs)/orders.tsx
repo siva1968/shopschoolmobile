@@ -41,21 +41,28 @@ interface OrdersResponse {
 
 const STATUS_COLORS: Record<string, string> = {
   pending: COLORS.warning,
+  reserved: COLORS.warning,
   processing: COLORS.info,
   shipped: COLORS.primary,
   delivered: COLORS.success,
   cancelled: COLORS.error,
+  canceled: COLORS.error,
   completed: COLORS.success,
 };
 
-function StatusChip({ status }: { status?: string }) {
-  const color = STATUS_COLORS[status?.toLowerCase() || ""] || COLORS.textSecondary;
+function formatStatus(status?: string): string {
+  if (!status) return "Unknown";
+  if (status.toLowerCase() === "pending") return "Reserved";
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+}
+
+function StatusChip({ label, color }: { label: string; color: string }) {
   return (
     <Chip
       style={{ backgroundColor: `${color}22`, alignSelf: "flex-start" }}
       textStyle={{ color, fontSize: FONT_SIZE.xs, fontWeight: "700" }}
     >
-      {(status || "Unknown").toUpperCase()}
+      {label.toUpperCase()}
     </Chip>
   );
 }
@@ -65,22 +72,20 @@ function OrderCard({ order }: { order: Order }) {
   const [downloading, setDownloading] = useState(false);
   const toast = useToast();
 
-  const total =
-    order.metadata?.total ||
-    order.cart?.order?.total ||
-    0;
+  const total = order.metadata?.total || order.cart?.order?.total || 0;
+  const isCancelled = order.is_cancelled ?? false;
+  const hasReturns = order.has_returns ?? false;
+  const canDownloadInvoice = order.status === "completed";
 
   const createdAt = order.created_at
     ? format(new Date(order.created_at), "dd MMM yyyy")
     : "";
 
-  // custom_items is the canonical display source:
-  //   - kit orders: contains the single KitCustomItem aggregate
-  //   - uniform/book orders: same line items as `items` (with returned_quantity added)
-  // Using custom_items first avoids duplicating items when both arrays are populated.
   const allItems = order.custom_items?.length
     ? order.custom_items
     : (order.items || []);
+
+  const refundInfo = order.refund_info as { total?: number; date?: string | null; items_count?: number } | null | undefined;
 
   const handleDownloadInvoice = useCallback(async () => {
     if (!order.order_attributes?.invoice_id) {
@@ -89,11 +94,11 @@ function OrderCard({ order }: { order: Order }) {
     }
     setDownloading(true);
     try {
-      const res = await apiPatch<{ invoice?: string }>(
+      const res = await apiPatch<{ pdf?: string }>(
         endpoints.order(order.id),
         {}
       );
-      const base64Pdf = res.invoice;
+      const base64Pdf = res.pdf;
       if (!base64Pdf) {
         toast.info("Invoice not available yet.");
         return;
@@ -103,7 +108,6 @@ function OrderCard({ order }: { order: Order }) {
       await writeAsStringAsync(fileUri, base64Pdf, {
         encoding: EncodingType.Base64,
       });
-
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
         await Sharing.shareAsync(fileUri, {
@@ -135,7 +139,24 @@ function OrderCard({ order }: { order: Order }) {
           <Text style={styles.orderDate}>{createdAt}</Text>
         </View>
         <View style={styles.orderHeaderRight}>
-          <Text style={styles.orderTotal}>{formatPrice(total)}</Text>
+          <View style={styles.totalCol}>
+            <Text
+              style={[
+                styles.orderTotal,
+                isCancelled && styles.orderTotalCancelled,
+              ]}
+            >
+              {formatPrice(total)}
+            </Text>
+            {isCancelled && (
+              <Text style={styles.cancelledTotal}>₹0.00</Text>
+            )}
+            {hasReturns && !isCancelled && refundInfo?.total != null && (
+              <Text style={styles.refundText}>
+                ₹{refundInfo.total.toLocaleString("en-IN")} refunded
+              </Text>
+            )}
+          </View>
           <MaterialCommunityIcons
             name={expanded ? "chevron-up" : "chevron-down"}
             size={22}
@@ -144,95 +165,147 @@ function OrderCard({ order }: { order: Order }) {
         </View>
       </TouchableOpacity>
 
-      {/* Status chips */}
+      {/* Status chips row */}
       <View style={styles.statusRow}>
-        {order.order_attributes?.books_status && (
-          <View style={styles.statusItem}>
-            <Text style={styles.statusLabel}>Books</Text>
-            <StatusChip status={order.order_attributes.books_status} />
-          </View>
+        {/* Main order status */}
+        <StatusChip
+          label={formatStatus(order.status)}
+          color={STATUS_COLORS[order.status?.toLowerCase() ?? ""] ?? COLORS.textSecondary}
+        />
+        {/* Cancelled badge */}
+        {isCancelled && (
+          <StatusChip label="Cancelled" color={COLORS.error} />
         )}
-        {order.order_attributes?.uniform_status && (
-          <View style={styles.statusItem}>
-            <Text style={styles.statusLabel}>Uniform</Text>
-            <StatusChip status={order.order_attributes.uniform_status} />
-          </View>
+        {/* Partial return badge */}
+        {hasReturns && !isCancelled && (
+          <StatusChip label="Partial Return" color="#d97706" />
         )}
-        {!order.order_attributes?.books_status &&
-          !order.order_attributes?.uniform_status && (
-            <StatusChip status={order.status} />
-          )}
       </View>
+
+
 
       {/* Expanded items */}
       {expanded && (
         <>
           <Divider style={{ marginVertical: SPACING.sm }} />
-          {allItems.map((item) => (
-            <View key={item.id} style={styles.orderItem}>
-              <View style={styles.orderItemIcon}>
-                <MaterialCommunityIcons
-                  name={
-                    item.item_type === "uniform"
-                      ? "tshirt-crew-outline"
-                      : "book-open-variant"
-                  }
-                  size={18}
-                  color={
-                    item.item_type === "uniform"
-                      ? COLORS.secondary
-                      : COLORS.primary
-                  }
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.orderItemTitle} numberOfLines={1}>
-                  {item.product_title || "Item"}
-                </Text>
-                {item.variant_title &&
-                  item.variant_title !== "Default Variant" && (
-                    <Text style={styles.orderItemVariant}>
-                      {item.variant_title}
-                    </Text>
-                  )}
-                <Text style={styles.orderItemQty}>Qty: {item.quantity}</Text>
-              </View>
-              <Text style={styles.orderItemPrice}>
-                {formatPrice(
-                  item.subtotal || item.unit_price * item.quantity
-                )}
+          <View style={styles.itemsHeader}>
+            <Text style={styles.itemsHeaderText}>
+              Order Items ({allItems.length})
+            </Text>
+            <Text style={styles.itemsTotalText}>
+              Total: {formatPrice(total)}
+            </Text>
+          </View>
+
+          {allItems.length === 0 ? (
+            <Text style={styles.noItemsText}>No items found in this order</Text>
+          ) : (
+            allItems.map((item, idx) => {
+              const itemId = (item as { id: string }).id;
+              const returnedQty: number =
+                (order.return_items_map as Record<string, number>)?.[itemId] ?? 0;
+              const isReturned = returnedQty > 0;
+              const isFullyReturned = returnedQty >= (item.quantity ?? 1);
+              const itemName =
+                (item as { product_title?: string }).product_title ||
+                (item as { title?: string }).title ||
+                (item as { subtitle?: string }).subtitle ||
+                "Item";
+              const variantTitle = (item as { variant_title?: string }).variant_title;
+              const kitType = (item as { class_kit_type?: string }).class_kit_type;
+              const unitPrice = (item as { unit_price?: number }).unit_price ?? 0;
+              const qty = item.quantity ?? 1;
+
+              return (
+                <View
+                  key={`${itemId}-${idx}`}
+                  style={[
+                    styles.orderItem,
+                    isReturned && styles.orderItemReturned,
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.orderItemTitleRow}>
+                      <Text style={styles.orderItemTitle} numberOfLines={2}>
+                        {itemName}
+                        {variantTitle &&
+                          variantTitle.toLowerCase() !== "default variant"
+                          ? ` - ${variantTitle}`
+                          : ""}
+                        {kitType ? ` (${kitType})` : ""}
+                      </Text>
+                      {isReturned && (
+                        <Chip
+                          style={{
+                            backgroundColor: isFullyReturned ? "#fee2e2" : "#fef3c7",
+                            marginLeft: SPACING.xs,
+                          }}
+                          textStyle={{
+                            color: isFullyReturned ? COLORS.error : "#d97706",
+                            fontSize: 9,
+                            fontWeight: "700",
+                          }}
+                        >
+                          {isFullyReturned ? "FULLY RETURNED" : "PARTIALLY RETURNED"}
+                        </Chip>
+                      )}
+                    </View>
+                    <View style={styles.orderItemMeta}>
+                      <Text
+                        style={[
+                          styles.orderItemQty,
+                          isReturned && { color: COLORS.error, fontWeight: "700" },
+                        ]}
+                      >
+                        Qty: {qty}
+                        {isReturned ? ` (${returnedQty} returned)` : ""}
+                      </Text>
+                      <Text style={styles.orderItemPrice}>
+                        {formatPrice(unitPrice)}
+                      </Text>
+                      <Text style={styles.orderItemTotal}>
+                        Total: {formatPrice(unitPrice * qty)}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })
+          )}
+
+          {/* Refund / cancellation note */}
+          {isCancelled && (
+            <View style={styles.returnsBanner}>
+              <MaterialCommunityIcons name="close-circle" size={14} color={COLORS.error} />
+              <Text style={[styles.returnsText, { color: COLORS.error }]}>
+                Order Cancelled — Full Refund
               </Text>
             </View>
-          ))}
-
-          {/* Returns info */}
-          {order.has_returns && (
+          )}
+          {hasReturns && !isCancelled && refundInfo?.total != null && (
             <View style={styles.returnsBanner}>
-              <MaterialCommunityIcons
-                name="refresh"
-                size={14}
-                color={COLORS.warning}
-              />
+              <MaterialCommunityIcons name="refresh" size={14} color="#d97706" />
               <Text style={styles.returnsText}>
-                Return requested
-                {order.refund_info ? `: ${order.refund_info}` : ""}
+                Refund: ₹{refundInfo.total.toLocaleString("en-IN")}
               </Text>
             </View>
           )}
 
-          {/* Download invoice */}
-          <Button
-            mode="outlined"
-            icon={downloading ? undefined : "file-pdf-box"}
-            textColor={COLORS.primary}
-            style={styles.invoiceBtn}
-            loading={downloading}
-            disabled={downloading}
-            onPress={handleDownloadInvoice}
-            compact
-          >
-            {downloading ? "Downloading..." : "Download Invoice"}
-          </Button>
+          {/* Invoice download — only for completed / canceled orders */}
+          {canDownloadInvoice && (
+            <Button
+              mode="outlined"
+              icon={downloading ? undefined : "file-pdf-box"}
+              textColor={COLORS.primary}
+              style={styles.invoiceBtn}
+              loading={downloading}
+              disabled={downloading}
+              onPress={handleDownloadInvoice}
+              compact
+            >
+              {downloading ? "Downloading..." : "Download Invoice"}
+            </Button>
+          )}
         </>
       )}
     </Surface>
@@ -306,7 +379,7 @@ const styles = StyleSheet.create({
   },
   orderHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
   },
   orderHeaderLeft: { flex: 1 },
@@ -318,52 +391,96 @@ const styles = StyleSheet.create({
   orderDate: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary, marginTop: 2 },
   orderHeaderRight: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: SPACING.xs,
   },
+  totalCol: { alignItems: "flex-end" },
   orderTotal: {
     fontSize: FONT_SIZE.md,
     fontWeight: "700",
     color: COLORS.primary,
   },
+  orderTotalCancelled: {
+    textDecorationLine: "line-through",
+    color: COLORS.disabled,
+    fontWeight: "400",
+  },
+  cancelledTotal: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.error,
+    fontWeight: "700",
+  },
+  refundText: {
+    fontSize: FONT_SIZE.xs,
+    color: "#d97706",
+    fontWeight: "500",
+  },
   statusRow: {
     flexDirection: "row",
-    gap: SPACING.sm,
+    gap: SPACING.xs,
     marginTop: SPACING.sm,
     flexWrap: "wrap",
   },
-  statusItem: { alignItems: "flex-start" },
-  statusLabel: {
+  itemsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: SPACING.sm,
+  },
+  itemsHeaderText: {
+    fontSize: FONT_SIZE.sm,
+    fontWeight: "600",
+    color: COLORS.textPrimary,
+  },
+  itemsTotalText: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.textSecondary,
-    marginBottom: 2,
-    textTransform: "uppercase",
+  },
+  noItemsText: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textSecondary,
+    fontStyle: "italic",
+    paddingVertical: SPACING.sm,
   },
   orderItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.sm,
-    paddingVertical: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
-  orderItemIcon: {
-    width: 32,
-    height: 32,
+  orderItemReturned: {
+    backgroundColor: "#fef2f2",
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.error,
+    paddingLeft: SPACING.sm,
     borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.background,
-    alignItems: "center",
-    justifyContent: "center",
+  },
+  orderItemTitleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+    marginBottom: 4,
   },
   orderItemTitle: {
     fontSize: FONT_SIZE.sm,
     fontWeight: "600",
     color: COLORS.textPrimary,
+    flex: 1,
   },
-  orderItemVariant: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
+  orderItemMeta: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    flexWrap: "wrap",
+  },
   orderItemQty: { fontSize: FONT_SIZE.xs, color: COLORS.textSecondary },
   orderItemPrice: {
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textSecondary,
+  },
+  orderItemTotal: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textSecondary,
     fontWeight: "600",
-    color: COLORS.textPrimary,
   },
   returnsBanner: {
     flexDirection: "row",
@@ -376,7 +493,7 @@ const styles = StyleSheet.create({
   },
   returnsText: {
     fontSize: FONT_SIZE.xs,
-    color: COLORS.warning,
+    color: "#d97706",
     flex: 1,
   },
   invoiceBtn: {

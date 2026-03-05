@@ -317,8 +317,8 @@ export interface Order {
   order_attributes?: OrderAttributes;
   is_cancelled?: boolean;
   has_returns?: boolean;
-  refund_info?: string | null;
-  return_items_map?: Record<string, unknown>;
+  refund_info?: { total: number; date?: string | null; items_count?: number } | null;
+  return_items_map?: Record<string, number>;
   cart?: {
     id: string;
     order?: { total: number; id: string };
