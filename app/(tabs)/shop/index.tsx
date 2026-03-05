@@ -10,7 +10,7 @@ import {
     View,
 } from "react-native";
 import {
-    Appbar,
+
     Chip,
     Searchbar,
     Surface,
@@ -41,21 +41,23 @@ interface KitListResponse {
 
 function ShopHeader() {
   const { portal } = usePortal();
+  const logoSrc = portal?.logo
+    ? portal.logo.startsWith("data:") || portal.logo.startsWith("http")
+      ? portal.logo
+      : `data:image/jpeg;base64,${portal.logo}`
+    : null;
 
   return (
-    <Appbar.Header style={styles.appBar} elevated>
-      {portal?.logo && (
+    <View style={styles.appBar}>
+      {logoSrc && (
         <Image
-          source={{ uri: `data:image/jpeg;base64,${portal.logo}` }}
+          source={{ uri: logoSrc }}
           style={styles.headerLogo}
           resizeMode="contain"
         />
       )}
-      <Appbar.Content
-        title="Shopschool"
-        titleStyle={styles.headerTitle}
-      />
-    </Appbar.Header>
+      <Text style={styles.headerTitle}>Shopschool</Text>
+    </View>
   );
 }
 
@@ -341,19 +343,28 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   appBar: {
+    height: 36,
     backgroundColor: COLORS.surface,
-    height: 28,
-    minHeight: 28,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: SPACING.sm,
+    gap: SPACING.xs,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.border,
   },
   headerTitle: {
-    fontSize: FONT_SIZE.xs,
+    fontSize: FONT_SIZE.sm,
     fontWeight: "700",
     color: COLORS.primaryDark,
   },
   headerLogo: {
-    width: 20,
-    height: 20,
-    marginLeft: SPACING.sm,
+    width: 22,
+    height: 22,
     borderRadius: RADIUS.sm,
   },
   studentBanner: {

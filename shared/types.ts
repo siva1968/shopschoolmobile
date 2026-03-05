@@ -107,6 +107,8 @@ export interface User {
   student_name?: string;
   portal_id?: string;
   student_id?: string;
+  class?: { id: string; name: string; portal_id?: string } | null;
+  section?: { id: string; name: string; portal_id?: string } | null;
   student_profile?: StudentProfile;
   addresses?: Address[];
   carts?: { id: string; metadata?: { portal_id?: string }; completed_at?: string | null; [key: string]: unknown }[];

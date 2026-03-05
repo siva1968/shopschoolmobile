@@ -143,7 +143,7 @@ function AddressSelector({
 }
 
 export default function CartScreen() {
-  const { cartId, cartData, cartLoading, fetchCart, clearCart } = useCart();
+  const { cartId, cartData, cartLoading, fetchCart, clearCart, createCart } = useCart();
   const { user } = useAuth();
   const toast = useToast();
 
@@ -254,6 +254,7 @@ export default function CartScreen() {
         await apiPost(endpoints.payments, { cart_id: cartId });
         await apiPost(endpoints.lineItemAttributes, { cart_id: cartId });
         toast.success("Order placed successfully!");
+        createCart(); // provision a fresh cart for next order
         router.replace("/(tabs)/orders");
       } catch (err: unknown) {
         const axiosErr = err as { response?: { data?: { message?: string } } };
@@ -356,6 +357,7 @@ export default function CartScreen() {
       });
       await apiPost(endpoints.lineItemAttributes, { cart_id: cartId });
       toast.success("Order placed successfully!");
+      createCart(); // provision a fresh cart for next order
       router.replace("/(tabs)/orders");
     } catch (err: unknown) {
       console.error("[RAZORPAY] Order confirm error:", JSON.stringify(err));

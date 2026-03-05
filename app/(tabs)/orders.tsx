@@ -1,5 +1,6 @@
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { format } from "date-fns";
+import * as FileSystem from "expo-file-system";
 import {
     documentDirectory,
     EncodingType,
@@ -9,6 +10,7 @@ import * as Sharing from "expo-sharing";
 import React, { useCallback, useState } from "react";
 import {
     FlatList,
+    Platform,
     RefreshControl,
     StyleSheet,
     TouchableOpacity,
@@ -104,18 +106,37 @@ function OrderCard({ order }: { order: Order }) {
         return;
       }
       const fileName = `invoice_${order.display_id || order.id}.pdf`;
-      const fileUri = `${documentDirectory}${fileName}`;
-      await writeAsStringAsync(fileUri, base64Pdf, {
-        encoding: EncodingType.Base64,
-      });
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
+
+      if (Platform.OS === "android") {
+        // Android: write directly to the Downloads folder via Storage Access Framework
+        const { StorageAccessFramework } = FileSystem;
+        const permissions = await StorageAccessFramework.requestDirectoryPermissionsAsync(
+          "content://com.android.externalstorage.documents/tree/primary%3ADownload"
+        );
+        if (!permissions.granted) {
+          toast.info("Storage permission denied.");
+          return;
+        }
+        const destUri = await StorageAccessFramework.createFileAsync(
+          permissions.directoryUri,
+          fileName,
+          "application/pdf"
+        );
+        await FileSystem.writeAsStringAsync(destUri, base64Pdf, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        toast.success(`Invoice saved to Downloads`);
+      } else {
+        // iOS: save to app directory then let user save to Files
+        const fileUri = `${documentDirectory}${fileName}`;
+        await writeAsStringAsync(fileUri, base64Pdf, {
+          encoding: EncodingType.Base64,
+        });
         await Sharing.shareAsync(fileUri, {
           mimeType: "application/pdf",
+          UTI: "com.adobe.pdf",
           dialogTitle: `Invoice #${order.display_id}`,
         });
-      } else {
-        toast.info("Sharing not available on this device.");
       }
     } catch {
       toast.error("Failed to download invoice.");
