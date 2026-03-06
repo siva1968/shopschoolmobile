@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
     FlatList,
+    Image,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -106,9 +107,12 @@ export default function LoginScreen() {
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.logoPlaceholder}>
-              <Text style={styles.logoText}>SS</Text>
+              <Image
+                source={require("../assets/images/shopSchoolLogo.png")}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
-            <Text style={styles.appName}>ShopSchool</Text>
             <Text style={styles.tagline}>Your school store</Text>
           </View>
 
@@ -308,31 +312,23 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     padding: SPACING.md,
-    paddingTop: SPACING.xl,
+    paddingTop: 80,
   },
   header: {
     alignItems: "center",
     marginBottom: SPACING.lg,
   },
   logoPlaceholder: {
-    width: 80,
-    height: 80,
+    width: 150,
+    height: 150,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: SPACING.sm,
   },
-  logoText: {
-    color: "#fff",
-    fontSize: 28,
-    fontWeight: "700",
-  },
-  appName: {
-    fontSize: FONT_SIZE.xxl,
-    fontWeight: "700",
-    color: COLORS.primary,
-    marginBottom: 4,
+  logoImage: {
+    width: 150,
+    height: 150,
+    borderRadius: RADIUS.md,
   },
   tagline: {
     fontSize: FONT_SIZE.sm,

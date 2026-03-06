@@ -22,7 +22,7 @@ import {
     Text,
     TextInput
 } from "react-native-paper";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import { useToast } from "../../contexts/ToastContext";
@@ -184,6 +184,7 @@ interface PasswordForm {
 
 // ─── Main Account Screen ──────────────────────────────────────────────────────
 export default function AccountScreen() {
+  const insets = useSafeAreaInsets();
   const { user, logout, fetchCustomerData } = useAuth();
   const toast = useToast();
 
@@ -281,8 +282,8 @@ export default function AccountScreen() {
   const profile = user?.student_profile;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <Appbar.Header style={styles.appBar} elevated>
+    <SafeAreaView style={styles.safeArea} edges={["bottom", "left", "right"]}>
+      <Appbar.Header style={styles.appBar} elevated statusBarHeight={insets.top}>
         <Appbar.Content title="My Account" titleStyle={styles.headerTitle} />
         <Appbar.Action
           icon="logout"
@@ -638,8 +639,18 @@ export default function AccountScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.background },
-  appBar: { backgroundColor: COLORS.surface },
-  headerTitle: { fontSize: FONT_SIZE.lg, fontWeight: "700" },
+  appBar: {
+    height: 65,
+    backgroundColor: COLORS.surface,
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.border,
+  },
+  headerTitle: { fontSize: 20, fontWeight: "700", color: COLORS.primaryDark },
   scrollContent: { padding: SPACING.md },
   section: {
     borderRadius: RADIUS.md,

@@ -1,16 +1,10 @@
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { format } from "date-fns";
 import * as FileSystem from "expo-file-system";
-import {
-    documentDirectory,
-    EncodingType,
-    writeAsStringAsync,
-} from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import React, { useCallback, useState } from "react";
 import {
     FlatList,
-    Platform,
     RefreshControl,
     StyleSheet,
     TouchableOpacity,
@@ -25,7 +19,7 @@ import {
     Surface,
     Text,
 } from "react-native-paper";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import { useToast } from "../../contexts/ToastContext";
 import { formatPrice } from "../../lib/auth-utils";
@@ -106,38 +100,23 @@ function OrderCard({ order }: { order: Order }) {
         return;
       }
       const fileName = `invoice_${order.display_id || order.id}.pdf`;
+      const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
 
-      if (Platform.OS === "android") {
-        // Android: write directly to the Downloads folder via Storage Access Framework
-        const { StorageAccessFramework } = FileSystem;
-        const permissions = await StorageAccessFramework.requestDirectoryPermissionsAsync(
-          "content://com.android.externalstorage.documents/tree/primary%3ADownload"
-        );
-        if (!permissions.granted) {
-          toast.info("Storage permission denied.");
-          return;
-        }
-        const destUri = await StorageAccessFramework.createFileAsync(
-          permissions.directoryUri,
-          fileName,
-          "application/pdf"
-        );
-        await FileSystem.writeAsStringAsync(destUri, base64Pdf, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        toast.success(`Invoice saved to Downloads`);
-      } else {
-        // iOS: save to app directory then let user save to Files
-        const fileUri = `${documentDirectory}${fileName}`;
-        await writeAsStringAsync(fileUri, base64Pdf, {
-          encoding: EncodingType.Base64,
-        });
-        await Sharing.shareAsync(fileUri, {
-          mimeType: "application/pdf",
-          UTI: "com.adobe.pdf",
-          dialogTitle: `Invoice #${order.display_id}`,
-        });
+      await FileSystem.writeAsStringAsync(fileUri, base64Pdf, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        toast.error("Sharing is not available on this device.");
+        return;
       }
+
+      await Sharing.shareAsync(fileUri, {
+        mimeType: "application/pdf",
+        UTI: "com.adobe.pdf",
+        dialogTitle: `Save Invoice #${order.display_id}`,
+      });
     } catch {
       toast.error("Failed to download invoice.");
     } finally {
@@ -334,6 +313,7 @@ function OrderCard({ order }: { order: Order }) {
 }
 
 export default function OrdersScreen() {
+  const insets = useSafeAreaInsets();
   const { data, isLoading, refetch, isRefetching } =
     useGetData<OrdersResponse>(["orders"], endpoints.orders, {
       staleTime: 30_000,
@@ -342,8 +322,8 @@ export default function OrdersScreen() {
   const orders = data?.list || [];
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <Appbar.Header style={styles.appBar} elevated>
+    <SafeAreaView style={styles.safeArea} edges={["bottom", "left", "right"]}>
+      <Appbar.Header style={styles.appBar} elevated statusBarHeight={insets.top}>
         <Appbar.Content title="My Orders" titleStyle={styles.headerTitle} />
         <Appbar.Action
           icon="refresh"
@@ -387,8 +367,18 @@ export default function OrdersScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.background },
-  appBar: { backgroundColor: COLORS.surface },
-  headerTitle: { fontSize: FONT_SIZE.lg, fontWeight: "700" },
+  appBar: {
+    height: 65,
+    backgroundColor: COLORS.surface,
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.border,
+  },
+  headerTitle: { fontSize: 20, fontWeight: "700", color: COLORS.primaryDark },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   listContent: { padding: SPACING.md, paddingBottom: 80 },
   orderCard: {

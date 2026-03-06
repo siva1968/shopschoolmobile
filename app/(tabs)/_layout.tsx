@@ -3,6 +3,7 @@ import { View, StyleSheet } from "react-native";
 import { Tabs, router } from "expo-router";
 import { Badge, Text } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCart } from "../../contexts/CartContext";
 import { COLORS } from "../../constants/theme";
@@ -37,6 +38,7 @@ function TabIcon({
 export default function TabsLayout() {
   const { isAuthenticated, isLoading } = useAuth();
   const { cartItemCount } = useCart();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -52,7 +54,7 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.textSecondary,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [styles.tabBar, { paddingBottom: insets.bottom + 8, height: 56 + insets.bottom }],
         tabBarLabelStyle: styles.tabLabel,
       }}
     >
@@ -83,7 +85,7 @@ export default function TabsLayout() {
         options={{
           title: "Orders",
           tabBarIcon: ({ focused }) => (
-            <TabIcon name="receipt-outline" focused={focused} />
+            <TabIcon name="cube-outline" focused={focused} />
           ),
         }}
       />
@@ -105,8 +107,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderTopColor: COLORS.border,
     borderTopWidth: 1,
-    height: 64,
-    paddingBottom: 8,
     paddingTop: 6,
     elevation: 8,
     shadowColor: "#000",

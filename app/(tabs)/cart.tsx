@@ -18,7 +18,7 @@ import {
     Surface,
     Text
 } from "react-native-paper";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Loader } from "../../components/common/Loader";
 import { COLORS, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
@@ -143,6 +143,7 @@ function AddressSelector({
 }
 
 export default function CartScreen() {
+  const insets = useSafeAreaInsets();
   const { cartId, cartData, cartLoading, fetchCart, clearCart, createCart } = useCart();
   const { user } = useAuth();
   const toast = useToast();
@@ -397,8 +398,8 @@ export default function CartScreen() {
   const shippingAddr = getAddress(shippingAddressId);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <Appbar.Header style={styles.appBar} elevated>
+    <SafeAreaView style={styles.safeArea} edges={["bottom", "left", "right"]}>
+      <Appbar.Header style={styles.appBar} elevated statusBarHeight={insets.top}>
         <Appbar.Content title="My Cart" titleStyle={styles.headerTitle} />
         {!isEmpty && (
           <Appbar.Action
@@ -636,8 +637,18 @@ export default function CartScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.background },
-  appBar: { backgroundColor: COLORS.surface },
-  headerTitle: { fontSize: FONT_SIZE.lg, fontWeight: "700" },
+  appBar: {
+    height: 65,
+    backgroundColor: COLORS.surface,
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.border,
+  },
+  headerTitle: { fontSize: 20, fontWeight: "700", color: COLORS.primaryDark },
   listContent: { padding: SPACING.md },
   emptyState: {
     flex: 1,

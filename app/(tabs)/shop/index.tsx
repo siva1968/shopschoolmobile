@@ -1,6 +1,6 @@
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { router } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
     FlatList,
     Image,
@@ -63,23 +63,72 @@ function ShopHeader() {
 
 function StudentBanner() {
   const { user } = useAuth();
+  const [expanded, setExpanded] = useState(false);
+
   if (!user) return null;
 
+  // Strip the +ALIAS part from email and lowercase it
+  const cleanEmail = (email?: string) => {
+    if (!email) return "-";
+    return email.replace(/\+[^@]+(@)/, "$1").toLowerCase();
+  };
+
+  const parentName =
+    user?.student_profile?.father_name ||
+    user?.student_profile?.mother_name ||
+    "-";
+
+  const rows: { icon: string; label: string; value: string }[] = [
+    { icon: "google-classroom", label: "Class", value: user?.student_profile?.class?.name || "-" },
+    { icon: "account-group", label: "Section", value: user?.student_profile?.section?.name || "-" },
+    { icon: "translate", label: "II Language", value: user?.student_profile?.second_language?.name || "-" },
+    { icon: "translate", label: "III Language", value: user?.student_profile?.third_language?.name || "-" },
+    { icon: "phone", label: "Phone", value: user?.phone || "-" },
+    { icon: "email", label: "Email", value: cleanEmail(user?.email) },
+  ];
+
   return (
-    <Surface style={styles.studentBanner} elevation={0}>
-      <View style={styles.studentRow}>
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => setExpanded((v) => !v)}
+      style={styles.studentBanner}
+    >
+      {/* Always visible: Name + Parent Name */}
+      <View style={styles.bannerHeader}>
+        <View style={{ flex: 1 }}>
+          <View style={styles.studentRow}>
+            <MaterialCommunityIcons name="account-school" size={16} color="#fff" />
+            <Text style={styles.bannerName} numberOfLines={1}>
+              {user?.student_name || `${user?.first_name ?? ""} ${user?.last_name ?? ""}`.trim()}
+            </Text>
+          </View>
+          <View style={[styles.studentRow, { marginTop: 2 }]}>
+            <MaterialCommunityIcons name="account-heart" size={14} color="#ddd" />
+            <Text style={styles.bannerSubName} numberOfLines={1}>
+              {parentName}
+            </Text>
+          </View>
+        </View>
         <MaterialCommunityIcons
-          name="account-school"
-          size={18}
-          color={COLORS.primary}
+          name={expanded ? "chevron-up" : "chevron-down"}
+          size={20}
+          color="#fff"
         />
-        <Text style={styles.studentText} numberOfLines={1}>
-          {user.student_name || `${user.first_name} ${user.last_name}`.trim()} —{" "}
-          {user.class?.name || ""}{" "}
-          {user.section?.name ? `| ${user.section.name}` : ""}
-        </Text>
       </View>
-    </Surface>
+
+      {/* Expanded details */}
+      {expanded && (
+        <View style={styles.bannerDetails}>
+          {rows.map((row) => (
+            <View key={row.label} style={styles.bannerDetailRow}>
+              <MaterialCommunityIcons name={row.icon as any} size={14} color="#ddd" style={{ width: 18 }} />
+              <Text style={styles.bannerDetailLabel}>{row.label}:</Text>
+              <Text style={styles.bannerDetailValue} numberOfLines={1}>{row.value}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -343,13 +392,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   appBar: {
-    height: 36,
+    height: 65,
     backgroundColor: COLORS.surface,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: SPACING.sm,
-    gap: SPACING.xs,
-    elevation: 3,
+    gap: SPACING.md,
+    elevation: 5,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
@@ -358,30 +407,63 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
   },
   headerTitle: {
-    fontSize: FONT_SIZE.sm,
+    fontSize: 20,
     fontWeight: "700",
     color: COLORS.primaryDark,
   },
   headerLogo: {
-    width: 22,
-    height: 22,
+    width: 50,
+    height: 50,
     borderRadius: RADIUS.sm,
   },
   studentBanner: {
-    backgroundColor: "#e6f4fc",
+    backgroundColor: "#6b6a6a",
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
+    paddingVertical: SPACING.sm,
+  },
+  bannerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  bannerName: {
+    fontSize: FONT_SIZE.sm,
+    fontWeight: "700",
+    color: "#fff",
+    marginLeft: SPACING.xs,
+    flex: 1,
+  },
+  bannerSubName: {
+    fontSize: FONT_SIZE.xs,
+    color: "#ddd",
+    marginLeft: SPACING.xs,
+    flex: 1,
+  },
+  bannerDetails: {
+    marginTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.2)",
+    paddingTop: SPACING.sm,
+    gap: 6,
+  },
+  bannerDetailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  bannerDetailLabel: {
+    fontSize: FONT_SIZE.xs,
+    color: "#ccc",
+    fontWeight: "600",
+    minWidth: 80,
+  },
+  bannerDetailValue: {
+    fontSize: FONT_SIZE.xs,
+    color: "#fff",
+    flex: 1,
   },
   studentRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.xs,
-  },
-  studentText: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.primaryDark,
-    fontWeight: "500",
-    flex: 1,
   },
   searchArea: {
     padding: SPACING.md,
